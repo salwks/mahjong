@@ -1,3 +1,4 @@
+// src/graphics/SceneManager.js (업데이트된 버전)
 import * as THREE from "three";
 
 export class SceneManager {
@@ -8,6 +9,9 @@ export class SceneManager {
     this.renderer = null;
     this.clock = new THREE.Clock();
 
+    // 텍스처 캐시
+    this.tileTextures = {};
+
     this.setupRenderer();
     this.setupCamera();
     this.setupLighting();
@@ -15,11 +19,13 @@ export class SceneManager {
   }
 
   async init() {
-    // 필요한 리소스 로딩
-    await this.loadResources();
+    // 텍스처 생성
+    await this.createTileTextures();
 
     // 리사이즈 처리
     this.onWindowResize();
+
+    console.log("✓ SceneManager 초기화 완료");
   }
 
   setupRenderer() {
@@ -48,7 +54,7 @@ export class SceneManager {
     );
 
     // 카메라 초기 위치 (플레이어 시점)
-    this.camera.position.set(0, 8, 6);
+    this.camera.position.set(0, 12, 8);
     this.camera.lookAt(0, 0, 0);
   }
 
@@ -90,7 +96,7 @@ export class SceneManager {
 
   createMahjongTable() {
     // 테이블 상판
-    const tableGeometry = new THREE.BoxGeometry(12, 0.3, 12);
+    const tableGeometry = new THREE.BoxGeometry(14, 0.3, 14);
     const tableMaterial = new THREE.MeshLambertMaterial({
       color: 0x2d5016,
       transparent: false,
@@ -101,107 +107,220 @@ export class SceneManager {
     this.scene.add(table);
 
     // 테이블 테두리
-    const borderGeometry = new THREE.BoxGeometry(12.2, 0.1, 12.2);
+    const borderGeometry = new THREE.BoxGeometry(14.4, 0.1, 14.4);
     const borderMaterial = new THREE.MeshLambertMaterial({ color: 0x654321 });
     const border = new THREE.Mesh(borderGeometry, borderMaterial);
     border.position.y = -0.05;
     this.scene.add(border);
 
-    // 중앙 영역 표시 (버린 패가 놓일 곳)
-    const centerGeometry = new THREE.BoxGeometry(6, 0.01, 6);
+    // 중앙 영역 표시 (버린패 영역)
+    const centerGeometry = new THREE.BoxGeometry(8, 0.02, 8);
     const centerMaterial = new THREE.MeshLambertMaterial({
       color: 0x3d6b26,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.3,
     });
     const center = new THREE.Mesh(centerGeometry, centerMaterial);
     center.position.y = 0.01;
     this.scene.add(center);
+
+    // 플레이어 영역 표시선들
+    this.createPlayerAreas();
+  }
+
+  createPlayerAreas() {
+    const areaSize = 0.02;
+    const positions = [
+      { x: 0, z: 5.5, color: 0x4caf50, width: 8, height: 1.5 }, // 플레이어 (하단, 초록)
+      { x: 5.5, z: 0, color: 0x2196f3, width: 1.5, height: 8 }, // AI 남 (우측, 파랑)
+      { x: 0, z: -5.5, color: 0xff9800, width: 8, height: 1.5 }, // AI 서 (상단, 주황)
+      { x: -5.5, z: 0, color: 0x9c27b0, width: 1.5, height: 8 }, // AI 북 (좌측, 보라)
+    ];
+
+    positions.forEach((pos, index) => {
+      const areaGeometry = new THREE.BoxGeometry(
+        pos.width,
+        areaSize,
+        pos.height
+      );
+      const areaMaterial = new THREE.MeshLambertMaterial({
+        color: pos.color,
+        transparent: true,
+        opacity: 0.15,
+      });
+      const area = new THREE.Mesh(areaGeometry, areaMaterial);
+
+      area.position.set(pos.x, 0.01, pos.z);
+      this.scene.add(area);
+    });
   }
 
   createFloor() {
     const floorGeometry = new THREE.PlaneGeometry(50, 50);
-    const floorMaterial = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
+    const floorMaterial = new THREE.MeshLambertMaterial({
+      color: 0x2a2a2a,
+      transparent: true,
+      opacity: 0.8,
+    });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -2;
+    floor.position.y = -1;
     floor.receiveShadow = true;
     this.scene.add(floor);
   }
 
-  async loadResources() {
-    // 텍스처 로더
-    const textureLoader = new THREE.TextureLoader();
+  async createTileTextures() {
+    this.tileTextures = {};
 
-    // 필요한 텍스처들을 미리 로드
-    const textures = {};
-
-    try {
-      // 마작패 텍스처들
-      const tileTypes = ["man", "pin", "sou"];
-      for (const type of tileTypes) {
-        for (let i = 1; i <= 9; i++) {
-          textures[`${type}_${i}`] = await this.loadTexture(
-            textureLoader,
-            `assets/textures/tiles/${type}_${i}.png`
-          );
-        }
-      }
-
-      // 자패 텍스처들
-      const honors = [
-        "east",
-        "south",
-        "west",
-        "north",
-        "white",
-        "green",
-        "red",
-      ];
-      for (const honor of honors) {
-        textures[`honor_${honor}`] = await this.loadTexture(
-          textureLoader,
-          `assets/textures/tiles/honor_${honor}.png`
-        );
-      }
-
-      // 뒷면 텍스처
-      textures["back"] = await this.loadTexture(
-        textureLoader,
-        "assets/textures/tiles/back.png"
+    // 만수 (1-9만)
+    for (let i = 1; i <= 9; i++) {
+      this.tileTextures[`man_${i}`] = this.createTileTexture(
+        i + "万",
+        "#d32f2f"
       );
-
-      this.textures = textures;
-    } catch (error) {
-      console.warn("일부 텍스처 로딩 실패, 기본 색상 사용:", error);
-      this.textures = {};
     }
+
+    // 통수 (1-9통)
+    for (let i = 1; i <= 9; i++) {
+      this.tileTextures[`pin_${i}`] = this.createTileTexture(
+        i + "筒",
+        "#1976d2"
+      );
+    }
+
+    // 삭수 (1-9삭)
+    for (let i = 1; i <= 9; i++) {
+      this.tileTextures[`sou_${i}`] = this.createTileTexture(
+        i + "索",
+        "#388e3c"
+      );
+    }
+
+    // 자패
+    this.tileTextures["honor_east"] = this.createTileTexture("東", "#ff6f00");
+    this.tileTextures["honor_south"] = this.createTileTexture("南", "#ff6f00");
+    this.tileTextures["honor_west"] = this.createTileTexture("西", "#ff6f00");
+    this.tileTextures["honor_north"] = this.createTileTexture("北", "#ff6f00");
+    this.tileTextures["honor_white"] = this.createTileTexture("白", "#9c27b0");
+    this.tileTextures["honor_green"] = this.createTileTexture("發", "#4caf50");
+    this.tileTextures["honor_red"] = this.createTileTexture("中", "#f44336");
+
+    // 뒷면 텍스처
+    this.tileTextures["back"] = this.createBackTexture();
+
+    console.log("✓ 마작패 텍스처 생성 완료");
   }
 
-  loadTexture(loader, url) {
-    return new Promise((resolve, reject) => {
-      loader.load(url, resolve, undefined, () => {
-        // 텍스처 로딩 실패시 기본 텍스처 생성
-        const canvas = document.createElement("canvas");
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, 64, 64);
-        ctx.fillStyle = "#000000";
-        ctx.font = "20px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText("?", 32, 36);
+  createTileTexture(text, color = "#000000") {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
 
-        const texture = new THREE.CanvasTexture(canvas);
-        resolve(texture);
-      });
-    });
+    // 배경 (흰색)
+    ctx.fillStyle = "#f8f8f8";
+    ctx.fillRect(0, 0, 128, 128);
+
+    // 외부 테두리
+    ctx.strokeStyle = "#333333";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 124, 124);
+
+    // 내부 테두리
+    ctx.strokeStyle = "#888888";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(8, 8, 112, 112);
+
+    // 텍스트
+    ctx.fillStyle = color;
+    ctx.font = 'bold 48px Arial, "Noto Sans CJK", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // 텍스트 그림자
+    ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+
+    ctx.fillText(text, 64, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+
+    return texture;
+  }
+
+  createBackTexture() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+
+    // 배경 (진한 녹색)
+    ctx.fillStyle = "#1b5e20";
+    ctx.fillRect(0, 0, 128, 128);
+
+    // 테두리
+    ctx.strokeStyle = "#f9a825";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 124, 124);
+
+    // 격자 패턴
+    ctx.strokeStyle = "#2e7d32";
+    ctx.lineWidth = 1;
+    for (let i = 12; i < 128; i += 16) {
+      ctx.beginPath();
+      ctx.moveTo(i, 12);
+      ctx.lineTo(i, 116);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(12, i);
+      ctx.lineTo(116, i);
+      ctx.stroke();
+    }
+
+    // 중앙 로고
+    ctx.fillStyle = "#f9a825";
+    ctx.font = "bold 20px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("麻雀", 64, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipMapLinearFilter;
+
+    return texture;
+  }
+
+  // 텍스처 제공 메서드 (MahjongTile에서 사용)
+  getTileTexture(key) {
+    return this.tileTextures[key] || this.createDefaultTexture();
+  }
+
+  createDefaultTexture() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "#cccccc";
+    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillStyle = "#000000";
+    ctx.font = "20px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("?", 32, 32);
+
+    return new THREE.CanvasTexture(canvas);
   }
 
   update() {
     const deltaTime = this.clock.getDelta();
-    // 여기서 애니메이션 업데이트 등을 처리
+    // 씬 업데이트 로직 (필요시 확장)
   }
 
   render() {
@@ -219,18 +338,32 @@ export class SceneManager {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   }
 
-  // 유틸리티 메서드들
-  getTexture(key) {
-    return this.textures[key] || this.createDefaultTexture();
-  }
+  dispose() {
+    // 텍스처 정리
+    Object.values(this.tileTextures).forEach((texture) => {
+      if (texture.dispose) texture.dispose();
+    });
 
-  createDefaultTexture() {
-    const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#cccccc";
-    ctx.fillRect(0, 0, 64, 64);
-    return new THREE.CanvasTexture(canvas);
+    // 씬 정리
+    while (this.scene.children.length > 0) {
+      const child = this.scene.children[0];
+      this.scene.remove(child);
+
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach((material) => material.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    }
+
+    // 렌더러 정리
+    if (this.renderer) {
+      this.renderer.dispose();
+    }
+
+    console.log("SceneManager 정리 완료");
   }
 }
