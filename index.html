@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Three.js 마작 게임</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Arial", sans-serif;
+        overflow: hidden;
+        background: #1a1a1a;
+        touch-action: none; /* 모바일 스크롤 방지 */
+      }
+
+      #gameContainer {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #gameCanvas {
+        display: block;
+      }
+
+      #gameUI {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 100;
+      }
+
+      .ui-element {
+        pointer-events: auto;
+      }
+
+      /* 모바일 UI */
+      .mobile-controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 10px;
+      }
+
+      .control-button {
+        padding: 12px 20px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .control-button:hover {
+        background: rgba(0, 0, 0, 0.9);
+      }
+
+      .control-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* 점수 표시 */
+      .score-display {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+
+      /* 게임 상태 표시 */
+      .game-status {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+
+      /* 로딩 화면 */
+      #loadingScreen {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 24px;
+        z-index: 1000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="gameContainer">
+      <canvas id="gameCanvas"></canvas>
+
+      <div id="gameUI">
+        <!-- 점수 표시 -->
+        <div class="score-display ui-element">
+          <div>동: <span id="score-east">25000</span></div>
+          <div>남: <span id="score-south">25000</span></div>
+          <div>서: <span id="score-west">25000</span></div>
+          <div>북: <span id="score-north">25000</span></div>
+        </div>
+
+        <!-- 게임 상태 -->
+        <div class="game-status ui-element">
+          <div>동 <span id="round-number">1</span>국</div>
+          <div>남은 패: <span id="remaining-tiles">70</span></div>
+          <div>도라: <span id="dora-indicator">🀄</span></div>
+        </div>
+
+        <!-- 모바일 컨트롤 -->
+        <div class="mobile-controls">
+          <button class="control-button ui-element" id="btn-discard">
+            버리기
+          </button>
+          <button class="control-button ui-element" id="btn-riichi" disabled>
+            리치
+          </button>
+          <button class="control-button ui-element" id="btn-tsumo" disabled>
+            쯔모
+          </button>
+          <button class="control-button ui-element" id="btn-ron" disabled>
+            론
+          </button>
+          <button class="control-button ui-element" id="btn-chi" disabled>
+            치
+          </button>
+          <button class="control-button ui-element" id="btn-pon" disabled>
+            폰
+          </button>
+          <button class="control-button ui-element" id="btn-kan" disabled>
+            깡
+          </button>
+        </div>
+      </div>
+
+      <div id="loadingScreen">
+        <div>게임 로딩 중...</div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
