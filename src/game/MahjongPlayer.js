@@ -1,4 +1,4 @@
-// src/game/MahjongPlayer.js (업데이트된 버전)
+// src/game/MahjongPlayer.js (수정된 버전)
 export class MahjongPlayer {
   constructor(index, isHuman, name, wind) {
     this.index = index;
@@ -94,7 +94,7 @@ export class MahjongPlayer {
     return this.hand.map((tile) => tile.toString()).join(" ");
   }
 
-  // === 손패 배치 (새로 추가) ===
+  // === 손패 배치 (수정된 버전) ===
 
   async arrangeHand(sceneManager) {
     // 패 정렬
@@ -118,6 +118,9 @@ export class MahjongPlayer {
       const y = baseY;
       const z = baseZ;
 
+      // 인간 플레이어 패는 선택 가능하도록 설정
+      tile.mesh.userData.selectable = true;
+
       return tile.arrangeInHand(
         { x, y, z },
         { x: 0, y: 0, z: 0 }, // 앞면
@@ -133,25 +136,25 @@ export class MahjongPlayer {
     const tileWidth = 0.55;
     let baseX, baseY, baseZ, rotationY;
 
-    // 올바른 마작 방향 (플레이어 인덱스에 따른 위치 설정)
+    // 올바른 마작 방향 (각 플레이어를 기준으로 자신을 향하도록)
     switch (this.index) {
-      case 1: // South (우측) - 왼쪽을 바라봄
+      case 1: // South (우측) - 중앙(플레이어)을 바라봄
         baseX = 4.8;
         baseY = 0.35;
-        baseZ = -(this.hand.length * tileWidth) / 2;
-        rotationY = -Math.PI / 2; // 왼쪽을 바라봄 (플레이어 방향)
+        baseZ = -(this.hand.length * tileWidth) / 2; // 수정: 중앙을 향하도록
+        rotationY = Math.PI / 2; // 수정: 중앙을 바라봄
         break;
-      case 2: // West (상단) - 아래쪽을 바라봄
+      case 2: // West (상단) - 중앙(플레이어)을 바라봄
         baseX = (this.hand.length * tileWidth) / 2;
         baseY = 0.35;
         baseZ = -4.8;
-        rotationY = Math.PI; // 아래쪽을 바라봄 (플레이어 방향)
+        rotationY = 0; // 수정: 중앙을 바라봄 (플레이어와 같은 방향)
         break;
-      case 3: // North (좌측) - 오른쪽을 바라봄
+      case 3: // North (좌측) - 중앙(플레이어)을 바라봄
         baseX = -4.8;
         baseY = 0.35;
-        baseZ = (this.hand.length * tileWidth) / 2;
-        rotationY = Math.PI / 2; // 오른쪽을 바라봄 (플레이어 방향)
+        baseZ = (this.hand.length * tileWidth) / 2; // 수정: 중앙을 향하도록
+        rotationY = -Math.PI / 2; // 수정: 중앙을 바라봄
         break;
     }
 
@@ -172,6 +175,9 @@ export class MahjongPlayer {
           z = baseZ - i * tileWidth;
           break;
       }
+
+      // AI 플레이어 패는 선택 불가능하도록 설정
+      tile.mesh.userData.selectable = false;
 
       return tile.arrangeInHand(
         { x, y: baseY, z },

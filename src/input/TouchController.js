@@ -1,4 +1,4 @@
-// src/input/TouchController.js
+// src/input/TouchController.js (수정된 버전 - 인간 플레이어 패만 선택 가능)
 import * as THREE from "three";
 
 export class TouchController {
@@ -233,12 +233,12 @@ export class TouchController {
   getIntersectedTile() {
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // 마작 타일만 검사
+    // 마작 타일만 검사 (선택 가능한 것들만)
     const intersectableObjects = this.scene.children.filter(
       (obj) =>
         obj.userData &&
         obj.userData.type === "mahjong-tile" &&
-        obj.userData.selectable
+        obj.userData.selectable === true // 선택 가능한 타일만
     );
 
     const intersects = this.raycaster.intersectObjects(intersectableObjects);
@@ -252,7 +252,25 @@ export class TouchController {
   }
 
   selectTile(tile) {
-    if (!tile || tile.isAnimating || tile.isDiscarded) return;
+    // 선택 불가능한 타일이면 무시
+    if (
+      !tile ||
+      tile.isAnimating ||
+      tile.isDiscarded ||
+      !tile.mesh.userData.selectable
+    ) {
+      console.log(
+        "선택할 수 없는 타일입니다:",
+        tile ? tile.toString() : "null"
+      );
+      return;
+    }
+
+    // 인간 플레이어(player0)의 패만 선택 가능
+    if (tile.owner !== "player0") {
+      console.log("다른 플레이어의 패는 선택할 수 없습니다:", tile.toString());
+      return;
+    }
 
     // 기존 선택 해제
     if (this.selectedTile && this.selectedTile !== tile) {
@@ -279,7 +297,16 @@ export class TouchController {
   }
 
   discardTile(tile) {
-    if (!tile || tile.isAnimating || tile.isDiscarded) return;
+    // 선택 불가능한 타일이거나 인간 플레이어 패가 아니면 무시
+    if (
+      !tile ||
+      tile.isAnimating ||
+      tile.isDiscarded ||
+      tile.owner !== "player0"
+    ) {
+      console.log("버릴 수 없는 타일입니다:", tile ? tile.toString() : "null");
+      return;
+    }
 
     console.log(`타일 버리기: ${tile.toString()}`);
 
@@ -300,12 +327,14 @@ export class TouchController {
       this.hoveredTile.onHover(false);
     }
 
-    // 새 호버 적용
+    // 새 호버 적용 (선택 가능한 타일만)
     if (
       tile &&
       tile !== this.selectedTile &&
       !tile.isAnimating &&
-      !tile.isDiscarded
+      !tile.isDiscarded &&
+      tile.mesh.userData.selectable &&
+      tile.owner === "player0" // 인간 플레이어 패만
     ) {
       this.hoveredTile = tile;
       tile.onHover(true);
@@ -323,7 +352,12 @@ export class TouchController {
   }
 
   updateCursor(tile) {
-    if (tile && tile.mesh && tile.mesh.userData.selectable) {
+    if (
+      tile &&
+      tile.mesh &&
+      tile.mesh.userData.selectable &&
+      tile.owner === "player0"
+    ) {
       this.canvas.style.cursor = "pointer";
     } else {
       this.canvas.style.cursor = "default";

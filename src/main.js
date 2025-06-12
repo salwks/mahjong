@@ -1,10 +1,11 @@
-// src/main.js (간소화된 버전)
+// src/main.js (올바른 import와 클래스 사용)
 import * as THREE from "three";
 import { gsap } from "gsap";
 import { SceneManager } from "./graphics/SceneManager.js";
 import { MahjongGame } from "./game/MahjongGame.js";
 import { TouchController } from "./input/TouchController.js";
-import { GameUI } from "./ui/GameUI.js";
+import { SimpleGameUI } from "./ui/SimpleGameUI.js";
+import { EventManager } from "./events/EventManager.js";
 
 class MahjongApp {
   constructor() {
@@ -15,7 +16,8 @@ class MahjongApp {
     this.sceneManager = null;
     this.game = null;
     this.touchController = null;
-    this.gameUI = null;
+    this.ui = null;
+    this.eventManager = null;
 
     // 상태
     this.isInitialized = false;
@@ -58,15 +60,20 @@ class MahjongApp {
         this.sceneManager.scene,
         this.canvas
       );
-      this.setupInputCallbacks();
 
-      // 4. UI 시스템 초기화
+      // 4. SimpleGameUI 초기화
       this.updateLoadingText("UI 초기화 중...");
-      this.gameUI = new GameUI(this.game);
-      this.gameUI.init();
-      this.setupUICallbacks();
+      this.ui = new SimpleGameUI();
 
-      // 5. 윈도우 이벤트 설정
+      // 5. EventManager 초기화
+      this.updateLoadingText("이벤트 시스템 초기화 중...");
+      this.eventManager = new EventManager(
+        this.game,
+        this.ui,
+        this.touchController
+      );
+
+      // 6. 윈도우 이벤트 설정
       this.setupWindowEvents();
 
       // 초기화 완료
@@ -74,41 +81,11 @@ class MahjongApp {
       this.hideLoadingScreen();
       this.showStartMenu();
 
-      console.log("✓ 마작 게임 초기화 완료");
+      console.log("✅ 마작 게임 초기화 완료");
     } catch (error) {
       console.error("초기화 실패:", error);
       this.handleError(error.message);
     }
-  }
-
-  setupInputCallbacks() {
-    // 타일 선택/버리기 콜백
-    this.touchController.onTileSelected = (tile) => {
-      console.log("타일 선택됨:", tile.toString());
-      this.gameUI.onTileSelected(tile);
-    };
-
-    this.touchController.onTileDiscarded = (tile) => {
-      console.log("타일 버리기 요청:", tile.toString());
-      if (this.game && this.game.onTileDiscarded) {
-        this.game.onTileDiscarded(tile);
-      }
-    };
-
-    this.touchController.onGestureDetected = (gesture, tile, data) => {
-      console.log(`제스처 감지: ${gesture}`, tile?.toString(), data);
-
-      // 위쪽 스와이프나 더블탭시 타일 버리기
-      if ((gesture === "swipe" && data === "up") || gesture === "doubletap") {
-        if (tile && this.game && this.game.onTileDiscarded) {
-          this.game.onTileDiscarded(tile);
-        }
-      }
-    };
-  }
-
-  setupUICallbacks() {
-    // UI 콜백들은 GameUI에서 직접 처리
   }
 
   setupWindowEvents() {
@@ -201,11 +178,15 @@ class MahjongApp {
 
     try {
       if (this.game) {
-        // 패 배분 없이 바로 게임 시작
+        // 게임 시작
         await this.game.startNewGame();
 
         // 입력 활성화
         this.touchController.setEnabled(true);
+
+        if (this.ui && this.ui.showMessage) {
+          this.ui.showMessage("게임이 시작되었습니다!", "success", 2000);
+        }
       }
     } catch (error) {
       console.error("게임 시작 실패:", error);
@@ -216,8 +197,9 @@ class MahjongApp {
   // === 유틸리티 ===
 
   updateLoadingText(text) {
-    const loadingText = document.getElementById("loading-text");
-    if (loadingText) {
+    const loadingScreen = this.loadingScreen;
+    if (loadingScreen) {
+      const loadingText = loadingScreen.querySelector("div") || loadingScreen;
       loadingText.textContent = text;
     }
     console.log(text);
@@ -239,51 +221,37 @@ class MahjongApp {
   handleError(message) {
     console.error("게임 에러:", message);
 
-    const loadingText = document.getElementById("loading-text");
-    const errorMessage = document.getElementById("error-message");
-
-    if (loadingText) {
-      loadingText.textContent = "오류 발생";
-    }
-
-    if (errorMessage) {
-      errorMessage.textContent = message;
-      errorMessage.style.display = "block";
-    }
-
-    // 새로고침 버튼
-    if (!document.querySelector(".restart-button")) {
-      const button = document.createElement("button");
-      button.textContent = "새로고침";
-      button.className = "restart-button";
-      button.onclick = () => window.location.reload();
-      button.style.cssText = `
-        margin-top: 20px;
-        padding: 12px 24px;
-        background: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 16px;
-        cursor: pointer;
+    if (this.loadingScreen) {
+      this.loadingScreen.innerHTML = `
+        <div style="text-align: center; color: white;">
+          <h2>오류 발생</h2>
+          <p>${message}</p>
+          <button onclick="window.location.reload()" 
+                  style="margin-top: 20px; padding: 12px 24px; background: #4CAF50; 
+                         color: white; border: none; border-radius: 6px; font-size: 16px; 
+                         cursor: pointer;">
+            새로고침
+          </button>
+        </div>
       `;
-
-      if (this.loadingScreen) {
-        this.loadingScreen.appendChild(button);
-      }
+      this.loadingScreen.style.display = "flex";
     }
   }
 
   dispose() {
     console.log("게임 정리 중...");
 
-    // 각 시스템 정리
+    // 각 시스템 정리 (순서 중요)
+    if (this.eventManager) {
+      this.eventManager.dispose();
+    }
+
     if (this.touchController) {
       this.touchController.dispose();
     }
 
-    if (this.gameUI) {
-      this.gameUI.dispose();
+    if (this.ui) {
+      this.ui.dispose();
     }
 
     if (this.game) {
@@ -291,7 +259,7 @@ class MahjongApp {
     }
 
     if (this.sceneManager) {
-      // SceneManager의 정리는 내부에서 처리
+      this.sceneManager.dispose();
     }
 
     console.log("게임 정리 완료");
@@ -308,16 +276,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // 전역 접근용
     window.mahjongApp = app;
 
-    // 디버그 함수
+    // 디버그 함수들
     window.debugGame = () => {
+      console.log("=== 게임 상태 ===");
       if (app.game) {
         console.log(app.game.getDebugInfo());
       }
     };
 
+    window.debugSelected = () => {
+      if (app.eventManager) {
+        console.log(
+          "선택된 타일:",
+          app.eventManager.getSelectedTile()?.toString() || "없음"
+        );
+      }
+    };
+
     console.log("🎮 디버깅 명령어:");
     console.log("- window.debugGame() : 게임 상태 확인");
-    console.log("- window.mahjongApp : 앱 인스턴스 접근");
+    console.log("- window.debugSelected() : 선택된 타일 확인");
   } catch (error) {
     console.error("앱 시작 실패:", error);
   }

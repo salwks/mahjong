@@ -1,4 +1,4 @@
-// src/game/MahjongGame.js (간소화된 버전 - 게임 흐름만)
+// src/game/MahjongGame.js (수정된 버전 - 플레이 순서와 패 버리기 수정)
 import { MahjongTile } from "./MahjongTile.js";
 import { MahjongPlayer } from "./MahjongPlayer.js";
 import { HandEvaluator } from "./HandEvaluator.js";
@@ -42,12 +42,37 @@ export class MahjongGame {
     this.yakuChecker = new YakuChecker();
     this.aiPlayers = [];
 
-    // 콜백들
-    this.onGameStateChanged = null;
-    this.onPlayerTurn = null;
-    this.onTileDiscarded = null;
+    // 콜백들 - 초기화할 때는 할당하지 않음
+    this._onGameStateChanged = null;
+    this._onPlayerTurn = null;
+    this._onRoundEnd = null;
 
     this.setupPositions();
+  }
+
+  // 콜백 setter/getter로 관리
+  set onGameStateChanged(callback) {
+    this._onGameStateChanged = callback;
+  }
+
+  get onGameStateChanged() {
+    return this._onGameStateChanged;
+  }
+
+  set onPlayerTurn(callback) {
+    this._onPlayerTurn = callback;
+  }
+
+  get onPlayerTurn() {
+    return this._onPlayerTurn;
+  }
+
+  set onRoundEnd(callback) {
+    this._onRoundEnd = callback;
+  }
+
+  get onRoundEnd() {
+    return this._onRoundEnd;
   }
 
   async init() {
@@ -182,7 +207,7 @@ export class MahjongGame {
     this.roundState = "playing";
     this.players.forEach((player) => player.resetForNewRound());
 
-    // 각 플레이어에게 14장씩 즉시 배분
+    // 각 플레이어에게 13장씩 배분 (동가는 14장)
     await this.distributeInitialHands();
 
     this.startPlayerTurn();
@@ -190,12 +215,14 @@ export class MahjongGame {
   }
 
   async distributeInitialHands() {
-    // 각 플레이어에게 14장씩 할당하고 MahjongPlayer가 배치 처리
+    // 각 플레이어에게 13장씩 할당 (동가는 14장)
     for (let playerIndex = 0; playerIndex < 4; playerIndex++) {
       const player = this.players[playerIndex];
+      const isDealer = playerIndex === this.dealerIndex;
+      const handSize = isDealer ? 14 : 13; // 동가는 14장
 
-      // 14장 할당
-      for (let i = 0; i < 14; i++) {
+      // 할당
+      for (let i = 0; i < handSize; i++) {
         if (this.wallTiles.length === 0) break;
         const tile = this.wallTiles.shift();
         tile.owner = `player${playerIndex}`;
@@ -214,8 +241,8 @@ export class MahjongGame {
     console.log(`${this.players[this.currentPlayerIndex].name}의 턴`);
     this.turnCount++;
 
-    if (this.onPlayerTurn) {
-      this.onPlayerTurn(this.currentPlayerIndex);
+    if (this._onPlayerTurn) {
+      this._onPlayerTurn(this.currentPlayerIndex);
     }
 
     if (this.currentPlayerIndex === 0) {
@@ -227,21 +254,51 @@ export class MahjongGame {
 
   startHumanPlayerTurn() {
     console.log("인간 플레이어 턴: 패를 선택하여 버리세요");
+    // 동가가 아닌 경우 패를 한 장 뽑아야 함
+    if (this.humanPlayer.hand.length === 13) {
+      this.drawTileForPlayer(0);
+    }
   }
 
   async startAIPlayerTurn() {
     const playerIndex = this.currentPlayerIndex;
     const player = this.players[playerIndex];
 
+    // AI 플레이어도 패를 뽑아야 함 (13장인 경우)
+    if (player.hand.length === 13) {
+      this.drawTileForPlayer(playerIndex);
+    }
+
     // AI 사고 시간
     await this.delay(1000 + Math.random() * 1500);
 
     // AI가 패 선택하여 버리기
-    if (player.hand.length > 0) {
+    if (player.hand.length > 13) {
       const randomIndex = Math.floor(Math.random() * player.hand.length);
       const tileToDiscard = player.hand[randomIndex];
       await this.handleDiscard(playerIndex, tileToDiscard);
     }
+  }
+
+  drawTileForPlayer(playerIndex) {
+    if (this.wallTiles.length === 0) {
+      this.handleGameDraw();
+      return;
+    }
+
+    const player = this.players[playerIndex];
+    const newTile = this.wallTiles.shift();
+    newTile.owner = `player${playerIndex}`;
+    player.addTile(newTile);
+    this.remainingTiles = this.wallTiles.length;
+
+    // 패 배치
+    player.arrangeHand(this.sceneManager);
+
+    console.log(
+      `${player.name}이 패를 뽑았습니다. (남은 패: ${this.remainingTiles}장)`
+    );
+    this.updateGameState();
   }
 
   async handleDiscard(playerIndex, tile) {
@@ -249,10 +306,15 @@ export class MahjongGame {
 
     // 손패에서 제거
     const tileIndex = player.hand.indexOf(tile);
-    if (tileIndex === -1) return;
+    if (tileIndex === -1) {
+      console.log("손패에 없는 타일입니다:", tile.toString());
+      return;
+    }
 
     player.removeTile(tile);
     this.discardPiles[playerIndex].push(tile);
+
+    console.log(`${player.name}이 ${tile.toString()}을(를) 버렸습니다.`);
 
     // MahjongTile의 discardWithRule 메서드 사용 (마작룰 적용)
     const discardPosition = this.getDiscardPosition(
@@ -282,25 +344,25 @@ export class MahjongGame {
       case 0: // East (플레이어) - 하단 중앙에서 위로
         return new THREE.Vector3(
           (col - (tilesPerRow - 1) / 2) * tileWidth,
-          0.05,
+          0.02, // 낮게 배치 (눕힌 상태)
           1.5 + row * 0.4
         );
       case 1: // South (우측) - 우측 중앙에서 왼쪽으로
         return new THREE.Vector3(
           1.5 - row * 0.4,
-          0.05,
+          0.02, // 낮게 배치
           (col - (tilesPerRow - 1) / 2) * tileWidth
         );
       case 2: // West (상단) - 상단 중앙에서 아래로
         return new THREE.Vector3(
           -(col - (tilesPerRow - 1) / 2) * tileWidth,
-          0.05,
+          0.02, // 낮게 배치
           -1.5 - row * 0.4
         );
       case 3: // North (좌측) - 좌측 중앙에서 오른쪽으로
         return new THREE.Vector3(
           -1.5 + row * 0.4,
-          0.05,
+          0.02, // 낮게 배치
           -(col - (tilesPerRow - 1) / 2) * tileWidth
         );
     }
@@ -319,21 +381,11 @@ export class MahjongGame {
   }
 
   nextTurn() {
+    // 정순 플레이 (0 → 1 → 2 → 3 → 0...)
     this.currentPlayerIndex = (this.currentPlayerIndex + 1) % 4;
 
     if (this.wallTiles.length > 0) {
-      const newTile = this.wallTiles.shift();
-      newTile.owner = `player${this.currentPlayerIndex}`;
-      this.players[this.currentPlayerIndex].addTile(newTile);
-      this.remainingTiles = this.wallTiles.length;
-
-      // 새 패 배치 후 턴 시작
-      this.players[this.currentPlayerIndex]
-        .arrangeHand(this.sceneManager)
-        .then(() => {
-          this.startPlayerTurn();
-        });
-
+      this.startPlayerTurn();
       this.updateGameState();
     } else {
       this.handleGameDraw();
@@ -345,27 +397,24 @@ export class MahjongGame {
     this.gameState = "roundEnd";
   }
 
-  // === 이벤트 핸들러 ===
+  // === 이벤트 핸들러 (간소화) ===
 
-  onTileDiscarded = (tile) => {
-    if (this.currentPlayerIndex !== 0 || this.gameState !== "playing") {
-      console.log("플레이어 턴이 아닙니다");
-      return;
-    }
+  // 타일 버리기 핸들러
+  handleTileDiscard(tile) {
+    console.log("게임: 타일 버리기 요청 받음:", tile.toString());
+    return this.handleDiscard(0, tile);
+  }
 
-    if (!this.humanPlayer.hand.includes(tile)) {
-      console.log("손패에 없는 타일입니다");
-      return;
-    }
-
-    this.handleDiscard(0, tile);
-  };
+  // 외부 접근용 getter (EventManager에서 사용)
+  get onTileDiscarded() {
+    return this.handleTileDiscard.bind(this);
+  }
 
   // === 유틸리티 ===
 
   updateGameState() {
-    if (this.onGameStateChanged) {
-      this.onGameStateChanged(this.getGameState());
+    if (this._onGameStateChanged) {
+      this._onGameStateChanged(this.getGameState());
     }
   }
 
