@@ -1,6 +1,6 @@
-// src/game/MahjongTile.js (GSAP v3 올바른 문법)
+// src/game/MahjongTile.js (간소화된 버전 - 패 로직만)
 import * as THREE from "three";
-import { gsap } from "gsap";
+import { TileAnimator } from "../animation/TileAnimator.js";
 
 export class MahjongTile {
   constructor(type, number, sceneManager, position = new THREE.Vector3()) {
@@ -14,34 +14,26 @@ export class MahjongTile {
     this.isDiscarded = false;
     this.isRevealed = true; // 앞면이 보이는지
     this.isAnimating = false;
-    this.owner = null; // 'player', 'ai1', 'ai2', 'ai3', 'wall'
+    this.owner = null; // 'player0', 'player1', 'player2', 'player3', 'wall'
 
     // 3D 메시
     this.mesh = null;
     this.originalY = position.y;
     this.originalRotation = { x: 0, y: 0, z: 0 };
 
-    // 애니메이션 트윈들 (GSAP v3에서는 개별적으로 관리)
-    this.tweens = {
-      position: null,
-      rotation: null,
-      scale: null,
-      material: null,
-      timeline: null,
-    };
+    // 애니메이션 담당 객체
+    this.animator = new TileAnimator(this);
 
     this.createMesh();
   }
 
   createMesh() {
-    // 마작패 크기 (실제 비율에 맞춤)
+    // 마작패 크기
     const width = 0.5;
     const height = 0.7;
     const depth = 0.35;
 
     const geometry = new THREE.BoxGeometry(width, height, depth);
-
-    // 각 면에 다른 재질 적용
     const materials = this.createMaterials();
 
     this.mesh = new THREE.Mesh(geometry, materials);
@@ -56,7 +48,6 @@ export class MahjongTile {
       selectable: true,
     };
 
-    // 씬에 추가
     this.sceneManager.scene.add(this.mesh);
   }
 
@@ -100,7 +91,8 @@ export class MahjongTile {
     }
   }
 
-  // 타일 정보를 문자열로 반환
+  // === 패 정보 관련 메서드들 ===
+
   toString() {
     if (this.type === "honor") {
       const honorNames = {
@@ -119,12 +111,10 @@ export class MahjongTile {
     }
   }
 
-  // 같은 패인지 확인
   equals(otherTile) {
     return this.type === otherTile.type && this.number === otherTile.number;
   }
 
-  // 비교 함수 (정렬용)
   compare(otherTile) {
     const typeOrder = { man: 0, pin: 1, sou: 2, honor: 3 };
 
@@ -148,554 +138,140 @@ export class MahjongTile {
     }
   }
 
-  // === 애니메이션 유틸리티 ===
+  // === 상태 관리 ===
 
-  // 기존 트윈 정리
-  killTweens() {
-    Object.values(this.tweens).forEach((tween) => {
-      if (tween) {
-        tween.kill();
-      }
-    });
-    this.tweens = {
-      position: null,
-      rotation: null,
-      scale: null,
-      material: null,
-      timeline: null,
-    };
+  setSelected(selected) {
+    this.isSelected = selected;
   }
 
-  // === 애니메이션 메서드들 ===
+  setDiscarded(discarded) {
+    this.isDiscarded = discarded;
+    if (discarded) {
+      this.mesh.userData.selectable = false;
+    }
+  }
 
-  // 위치 설정 (애니메이션 포함)
+  setRevealed(revealed) {
+    this.isRevealed = revealed;
+  }
+
+  // === 애니메이션 메서드들 (TileAnimator로 위임) ===
+
+  // 기본 위치/회전 설정
   setPosition(x, y, z, animate = false, duration = 0.5) {
-    const newPosition = new THREE.Vector3(x, y, z);
-    this.position.copy(newPosition);
-    this.originalY = y;
-
-    if (animate && this.mesh) {
-      this.isAnimating = true;
-
-      // 기존 위치 애니메이션 정리
-      if (this.tweens.position) {
-        this.tweens.position.kill();
-      }
-
-      this.tweens.position = gsap.to(this.mesh.position, {
-        duration: duration,
-        x: x,
-        y: y,
-        z: z,
-        ease: "power2.out",
-        onComplete: () => {
-          this.isAnimating = false;
-        },
-      });
-    } else if (this.mesh) {
-      this.mesh.position.set(x, y, z);
-    }
+    return this.animator.setPosition(x, y, z, animate, duration);
   }
 
-  // 회전 설정 (애니메이션 포함)
   setRotation(x, y, z, animate = false, duration = 0.5) {
-    this.originalRotation = { x, y, z };
-
-    if (animate && this.mesh) {
-      this.isAnimating = true;
-
-      if (this.tweens.rotation) {
-        this.tweens.rotation.kill();
-      }
-
-      this.tweens.rotation = gsap.to(this.mesh.rotation, {
-        duration: duration,
-        x: x,
-        y: y,
-        z: z,
-        ease: "power2.out",
-        onComplete: () => {
-          this.isAnimating = false;
-        },
-      });
-    } else if (this.mesh) {
-      this.mesh.rotation.set(x, y, z);
-    }
+    return this.animator.setRotation(x, y, z, animate, duration);
   }
 
-  // 패 뒤집기 (앞면/뒷면)
   flip(showFront = true, animate = true, duration = 0.4) {
-    this.isRevealed = showFront;
-    const targetY = showFront ? 0 : Math.PI;
-
-    if (animate && this.mesh) {
-      this.isAnimating = true;
-
-      if (this.tweens.rotation) {
-        this.tweens.rotation.kill();
-      }
-
-      this.tweens.rotation = gsap.to(this.mesh.rotation, {
-        duration: duration,
-        y: targetY,
-        ease: "power2.inOut",
-        onComplete: () => {
-          this.isAnimating = false;
-        },
-      });
-    } else if (this.mesh) {
-      this.mesh.rotation.y = targetY;
-    }
+    return this.animator.flip(showFront, animate, duration);
   }
 
-  // 마우스 호버 효과
+  // 인터랙션 애니메이션
   onHover(isHovering) {
-    if (!this.mesh || this.isAnimating || this.isDiscarded || this.isSelected)
-      return;
-
-    // 기존 호버 애니메이션 정리
-    if (this.tweens.timeline) {
-      this.tweens.timeline.kill();
-    }
-
-    const targetY = isHovering ? this.originalY + 0.1 : this.originalY;
-    const targetScale = isHovering ? 1.05 : 1;
-
-    // GSAP v3 타임라인 문법
-    this.tweens.timeline = gsap.timeline();
-    this.tweens.timeline
-      .to(this.mesh.position, {
-        duration: 0.2,
-        y: targetY,
-        ease: "power2.out",
-      })
-      .to(
-        this.mesh.scale,
-        {
-          duration: 0.2,
-          x: targetScale,
-          y: targetScale,
-          z: targetScale,
-          ease: "power2.out",
-        },
-        0
-      ); // 0은 동시 시작을 의미
+    return this.animator.onHover(isHovering);
   }
 
-  // 선택 효과
   select() {
-    if (!this.mesh || this.isAnimating || this.isDiscarded) return;
-
-    this.isSelected = true;
-
-    // 기존 애니메이션 정리
-    this.killTweens();
-
-    // 위로 올리고 약간 기울이기
-    this.tweens.timeline = gsap.timeline();
-    this.tweens.timeline
-      .to(this.mesh.position, {
-        duration: 0.3,
-        y: this.originalY + 0.3,
-        ease: "back.out(1.7)",
-      })
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 0.3,
-          x: -0.2,
-          ease: "back.out(1.7)",
-        },
-        0
-      );
-
-    // 발광 효과 (재질 변경)
-    this.mesh.material.forEach((material) => {
-      if (material.emissive) {
-        gsap.to(material.emissive, {
-          duration: 0.3,
-          r: 0.2,
-          g: 0.4,
-          b: 0.6,
-        });
-      }
-    });
-
-    // 지속적인 부드러운 움직임
-    this.startSelectAnimation();
+    this.setSelected(true);
+    return this.animator.select();
   }
 
-  startSelectAnimation() {
-    if (!this.isSelected || !this.mesh) return;
-
-    const baseY = this.originalY + 0.3;
-
-    // 무한 반복 애니메이션
-    this.tweens.selectLoop = gsap.timeline({ repeat: -1, yoyo: true });
-    this.tweens.selectLoop
-      .to(this.mesh.position, {
-        duration: 1.5,
-        y: baseY + 0.05,
-        ease: "sine.inOut",
-      })
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 3,
-          y: this.originalRotation.y + 0.1,
-          ease: "sine.inOut",
-        },
-        0
-      );
-  }
-
-  // 선택 해제
   deselect() {
-    if (!this.mesh) return;
-
-    this.isSelected = false;
-
-    // 모든 애니메이션 정리
-    this.killTweens();
-
-    // 원래 위치로 복귀
-    this.tweens.timeline = gsap.timeline();
-    this.tweens.timeline
-      .to(this.mesh.position, {
-        duration: 0.3,
-        y: this.originalY,
-        ease: "power2.out",
-      })
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 0.3,
-          x: this.originalRotation.x,
-          y: this.originalRotation.y,
-          z: this.originalRotation.z,
-          ease: "power2.out",
-        },
-        0
-      )
-      .to(
-        this.mesh.scale,
-        {
-          duration: 0.3,
-          x: 1,
-          y: 1,
-          z: 1,
-          ease: "power2.out",
-        },
-        0
-      );
-
-    // 발광 효과 제거
-    this.mesh.material.forEach((material) => {
-      if (material.emissive) {
-        gsap.to(material.emissive, {
-          duration: 0.3,
-          r: 0,
-          g: 0,
-          b: 0,
-        });
-      }
-    });
+    this.setSelected(false);
+    return this.animator.deselect();
   }
 
-  // 패 버리기 애니메이션
-  discard(targetPosition, onComplete) {
-    if (!this.mesh || this.isDiscarded) return;
-
-    this.isDiscarded = true;
-    this.isSelected = false;
-    this.mesh.userData.selectable = false;
-
-    // 기존 애니메이션 정리
-    this.killTweens();
-
-    // 포물선 움직임으로 버리기
-    const startPos = this.mesh.position.clone();
-    const endPos = targetPosition.clone();
-    const midPos = new THREE.Vector3(
-      (startPos.x + endPos.x) / 2,
-      Math.max(startPos.y, endPos.y) + 1.5,
-      (startPos.z + endPos.z) / 2
+  // 마작 게임 특화 애니메이션
+  async arrangeInHand(
+    targetPosition,
+    targetRotation,
+    showFront = true,
+    delay = 0
+  ) {
+    return this.animator.arrangeInHand(
+      targetPosition,
+      targetRotation,
+      showFront,
+      delay
     );
-
-    // 포물선 애니메이션
-    this.tweens.timeline = gsap.timeline();
-    this.tweens.timeline
-      .to(this.mesh.position, {
-        duration: 0.4,
-        x: midPos.x,
-        y: midPos.y,
-        z: midPos.z,
-        ease: "power2.out",
-      })
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 0.8,
-          x: Math.PI / 2 + (Math.random() - 0.5) * 0.4,
-          y: Math.random() * Math.PI * 2,
-          z: (Math.random() - 0.5) * 0.4,
-          ease: "power2.out",
-        },
-        0
-      )
-      .to(this.mesh.position, {
-        duration: 0.4,
-        x: endPos.x,
-        y: endPos.y,
-        z: endPos.z,
-        ease: "power2.in",
-        onComplete: () => {
-          this.isAnimating = false;
-          if (onComplete) onComplete(this);
-        },
-      });
   }
 
-  // 패 뽑기 애니메이션 (벽에서 손으로)
+  async discardWithRule(finalPosition, playerIndex) {
+    this.setDiscarded(true);
+    return this.animator.discardWithRule(finalPosition, playerIndex);
+  }
+
+  async reorganize(correctPosition) {
+    return this.animator.reorganize(correctPosition);
+  }
+
+  // 기타 애니메이션
+  discard(targetPosition, onComplete) {
+    this.setDiscarded(true);
+    return this.animator.discard(targetPosition, onComplete);
+  }
+
   drawFromWall(targetPosition, onComplete) {
-    if (!this.mesh) return;
-
-    this.isAnimating = true;
-
-    // 뽑을 때 회전하며 움직임
-    this.tweens.timeline = gsap.timeline();
-    this.tweens.timeline
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 0.6,
-          y: "+=6.28", // += 는 현재값에 더하기 (2π = 한 바퀴)
-          ease: "power2.out",
-        },
-        0
-      )
-      .to(this.mesh.position, {
-        duration: 0.4,
-        x: targetPosition.x,
-        y: targetPosition.y + 0.5,
-        z: targetPosition.z,
-        ease: "power2.out",
-      })
-      .to(this.mesh.position, {
-        duration: 0.3,
-        y: targetPosition.y,
-        ease: "bounce.out",
-        onComplete: () => {
-          this.position.copy(targetPosition);
-          this.originalY = targetPosition.y;
-          this.isAnimating = false;
-          if (onComplete) onComplete(this);
-        },
-      });
+    return this.animator.drawFromWall(targetPosition, onComplete);
   }
 
-  // 패 정렬 애니메이션
-  arrangeInHand(targetPosition, delay = 0) {
-    if (!this.mesh) return;
-
-    return new Promise((resolve) => {
-      gsap.delayedCall(delay, () => {
-        this.isAnimating = true;
-
-        this.tweens.timeline = gsap.timeline();
-        this.tweens.timeline
-          .to(this.mesh.position, {
-            duration: 0.5,
-            x: targetPosition.x,
-            y: targetPosition.y,
-            z: targetPosition.z,
-            ease: "power2.out",
-          })
-          .to(
-            this.mesh.rotation,
-            {
-              duration: 0.5,
-              x: 0,
-              y: 0,
-              z: 0,
-              ease: "power2.out",
-              onComplete: () => {
-                this.position.copy(targetPosition);
-                this.originalY = targetPosition.y;
-                this.originalRotation = { x: 0, y: 0, z: 0 };
-                this.isAnimating = false;
-                resolve();
-              },
-            },
-            0
-          );
-      });
-    });
-  }
-
-  // 섞기 애니메이션
   shuffle(intensity = 1) {
-    if (!this.mesh || this.isAnimating) return;
-
-    const randomX = (Math.random() - 0.5) * intensity;
-    const randomY = (Math.random() - 0.5) * intensity * 0.5;
-    const randomZ = (Math.random() - 0.5) * intensity;
-
-    const randomRotX = (Math.random() - 0.5) * 0.5;
-    const randomRotY = (Math.random() - 0.5) * Math.PI;
-    const randomRotZ = (Math.random() - 0.5) * 0.3;
-
-    this.tweens.timeline = gsap.timeline();
-    this.tweens.timeline
-      .to(this.mesh.position, {
-        duration: 0.3,
-        x: this.position.x + randomX,
-        y: this.position.y + Math.abs(randomY) + 0.2,
-        z: this.position.z + randomZ,
-        ease: "power2.out",
-      })
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 0.3,
-          x: randomRotX,
-          y: randomRotY,
-          z: randomRotZ,
-          ease: "power2.out",
-        },
-        0
-      )
-      .to(this.mesh.position, {
-        duration: 0.4,
-        x: this.position.x,
-        y: this.position.y,
-        z: this.position.z,
-        ease: "bounce.out",
-      })
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 0.4,
-          x: this.originalRotation.x,
-          y: this.originalRotation.y,
-          z: this.originalRotation.z,
-          ease: "power2.out",
-        },
-        "-=0.4"
-      ); // -=0.4는 0.4초 전에 시작
+    return this.animator.shuffle(intensity);
   }
 
-  // 손패에서 벽으로 이동 (게임 시작시)
-  moveToWall(targetPosition, delay = 0) {
-    return new Promise((resolve) => {
-      gsap.delayedCall(delay, () => {
-        this.isAnimating = true;
-
-        this.tweens.timeline = gsap.timeline();
-        this.tweens.timeline
-          .to(this.mesh.position, {
-            duration: 0.8,
-            x: targetPosition.x,
-            y: targetPosition.y,
-            z: targetPosition.z,
-            ease: "power2.inOut",
-          })
-          .to(
-            this.mesh.rotation,
-            {
-              duration: 0.8,
-              x: 0,
-              y: Math.PI, // 뒷면으로
-              z: 0,
-              ease: "power2.inOut",
-              onComplete: () => {
-                this.position.copy(targetPosition);
-                this.originalY = targetPosition.y;
-                this.isRevealed = false;
-                this.isAnimating = false;
-                resolve();
-              },
-            },
-            0
-          );
-      });
-    });
-  }
-
-  // 멜드 위치로 이동
   moveToMeld(targetPosition, targetRotation, onComplete) {
-    if (!this.mesh) return;
-
-    this.isAnimating = true;
-    this.mesh.userData.selectable = false;
-
-    this.tweens.timeline = gsap.timeline();
-    this.tweens.timeline
-      .to(this.mesh.position, {
-        duration: 0.6,
-        x: targetPosition.x,
-        y: targetPosition.y,
-        z: targetPosition.z,
-        ease: "power2.out",
-      })
-      .to(
-        this.mesh.rotation,
-        {
-          duration: 0.6,
-          x: targetRotation.x,
-          y: targetRotation.y,
-          z: targetRotation.z,
-          ease: "power2.out",
-          onComplete: () => {
-            this.position.copy(targetPosition);
-            this.originalY = targetPosition.y;
-            this.originalRotation = {
-              x: targetRotation.x,
-              y: targetRotation.y,
-              z: targetRotation.z,
-            };
-            this.isAnimating = false;
-            if (onComplete) onComplete(this);
-          },
-        },
-        0
-      );
+    return this.animator.moveToMeld(targetPosition, targetRotation, onComplete);
   }
 
-  // 페이드 인/아웃
   fadeIn(duration = 0.5) {
-    if (!this.mesh) return;
-
-    this.mesh.material.forEach((material) => {
-      material.transparent = true;
-      material.opacity = 0;
-      gsap.to(material, {
-        duration: duration,
-        opacity: 1,
-        ease: "power2.out",
-      });
-    });
+    return this.animator.fadeIn(duration);
   }
 
   fadeOut(duration = 0.5, onComplete) {
-    if (!this.mesh) return;
-
-    this.mesh.material.forEach((material) => {
-      gsap.to(material, {
-        duration: duration,
-        opacity: 0,
-        ease: "power2.out",
-        onComplete: () => {
-          if (onComplete) onComplete(this);
-        },
-      });
-    });
+    return this.animator.fadeOut(duration, onComplete);
   }
 
-  // 제거
+  // === 애니메이션 관리 ===
+
+  killTweens() {
+    return this.animator.killTweens();
+  }
+
+  // === 유틸리티 ===
+
+  clone() {
+    const clonedTile = new MahjongTile(
+      this.type,
+      this.number,
+      this.sceneManager,
+      this.position
+    );
+    clonedTile.isRevealed = this.isRevealed;
+    clonedTile.owner = this.owner;
+    return clonedTile;
+  }
+
+  getDebugInfo() {
+    return {
+      type: this.type,
+      number: this.number,
+      position: this.position,
+      isSelected: this.isSelected,
+      isDiscarded: this.isDiscarded,
+      isRevealed: this.isRevealed,
+      isAnimating: this.isAnimating,
+      owner: this.owner,
+      toString: this.toString(),
+    };
+  }
+
   dispose() {
-    // 모든 애니메이션 정리
-    this.killTweens();
+    // 애니메이션 정리
+    this.animator.dispose();
 
     // 씬에서 제거
     if (this.mesh) {
@@ -710,33 +286,6 @@ export class MahjongTile {
     }
 
     this.mesh = null;
-  }
-
-  // 복사본 생성
-  clone() {
-    const clonedTile = new MahjongTile(
-      this.type,
-      this.number,
-      this.sceneManager,
-      this.position
-    );
-    clonedTile.isRevealed = this.isRevealed;
-    clonedTile.owner = this.owner;
-    return clonedTile;
-  }
-
-  // 디버그 정보
-  getDebugInfo() {
-    return {
-      type: this.type,
-      number: this.number,
-      position: this.position,
-      isSelected: this.isSelected,
-      isDiscarded: this.isDiscarded,
-      isRevealed: this.isRevealed,
-      isAnimating: this.isAnimating,
-      owner: this.owner,
-      toString: this.toString(),
-    };
+    this.animator = null;
   }
 }

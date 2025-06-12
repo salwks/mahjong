@@ -1,4 +1,4 @@
-// src/game/MahjongPlayer.js
+// src/game/MahjongPlayer.js (업데이트된 버전)
 export class MahjongPlayer {
   constructor(index, isHuman, name, wind) {
     this.index = index;
@@ -94,6 +94,96 @@ export class MahjongPlayer {
     return this.hand.map((tile) => tile.toString()).join(" ");
   }
 
+  // === 손패 배치 (새로 추가) ===
+
+  async arrangeHand(sceneManager) {
+    // 패 정렬
+    this.sortHand();
+
+    if (this.isHuman) {
+      await this.arrangeHumanHand();
+    } else {
+      await this.arrangeAIHand();
+    }
+  }
+
+  async arrangeHumanHand() {
+    const tileWidth = 0.55;
+    const baseX = -(this.hand.length * tileWidth) / 2;
+    const baseY = 0.35;
+    const baseZ = 4.8;
+
+    const arrangePromises = this.hand.map((tile, i) => {
+      const x = baseX + i * tileWidth;
+      const y = baseY;
+      const z = baseZ;
+
+      return tile.arrangeInHand(
+        { x, y, z },
+        { x: 0, y: 0, z: 0 }, // 앞면
+        true, // 인간 플레이어는 앞면
+        i * 0.05 // 지연시간
+      );
+    });
+
+    await Promise.all(arrangePromises);
+  }
+
+  async arrangeAIHand() {
+    const tileWidth = 0.55;
+    let baseX, baseY, baseZ, rotationY;
+
+    // 올바른 마작 방향 (플레이어 인덱스에 따른 위치 설정)
+    switch (this.index) {
+      case 1: // South (우측) - 왼쪽을 바라봄
+        baseX = 4.8;
+        baseY = 0.35;
+        baseZ = -(this.hand.length * tileWidth) / 2;
+        rotationY = -Math.PI / 2; // 왼쪽을 바라봄 (플레이어 방향)
+        break;
+      case 2: // West (상단) - 아래쪽을 바라봄
+        baseX = (this.hand.length * tileWidth) / 2;
+        baseY = 0.35;
+        baseZ = -4.8;
+        rotationY = Math.PI; // 아래쪽을 바라봄 (플레이어 방향)
+        break;
+      case 3: // North (좌측) - 오른쪽을 바라봄
+        baseX = -4.8;
+        baseY = 0.35;
+        baseZ = (this.hand.length * tileWidth) / 2;
+        rotationY = Math.PI / 2; // 오른쪽을 바라봄 (플레이어 방향)
+        break;
+    }
+
+    const arrangePromises = this.hand.map((tile, i) => {
+      let x, z;
+
+      switch (this.index) {
+        case 1: // South (우측)
+          x = baseX;
+          z = baseZ + i * tileWidth;
+          break;
+        case 2: // West (상단)
+          x = baseX - i * tileWidth;
+          z = baseZ;
+          break;
+        case 3: // North (좌측)
+          x = baseX;
+          z = baseZ - i * tileWidth;
+          break;
+      }
+
+      return tile.arrangeInHand(
+        { x, y: baseY, z },
+        { x: 0, y: rotationY, z: 0 },
+        false, // AI는 뒷면
+        i * 0.03 // 지연시간
+      );
+    });
+
+    await Promise.all(arrangePromises);
+  }
+
   // === 멜드 관리 ===
 
   // 멜드 추가 (치/폰/깡)
@@ -108,7 +198,6 @@ export class MahjongPlayer {
 
     this.melds.push(meldInfo);
 
-    // 멜드에 사용된 패들은 손패에서 제거 (이미 게임에서 처리됨)
     console.log(
       `${this.name}: ${type} 멜드 추가 - ${meld
         .map((t) => t.toString())

@@ -84,17 +84,26 @@ class MahjongApp {
   setupInputCallbacks() {
     // 타일 선택/버리기 콜백
     this.touchController.onTileSelected = (tile) => {
+      console.log("타일 선택됨:", tile.toString());
       this.gameUI.onTileSelected(tile);
     };
 
     this.touchController.onTileDiscarded = (tile) => {
-      if (this.game.onTileDiscarded) {
+      console.log("타일 버리기 요청:", tile.toString());
+      if (this.game && this.game.onTileDiscarded) {
         this.game.onTileDiscarded(tile);
       }
     };
 
     this.touchController.onGestureDetected = (gesture, tile, data) => {
       console.log(`제스처 감지: ${gesture}`, tile?.toString(), data);
+
+      // 위쪽 스와이프나 더블탭시 타일 버리기
+      if ((gesture === "swipe" && data === "up") || gesture === "doubletap") {
+        if (tile && this.game && this.game.onTileDiscarded) {
+          this.game.onTileDiscarded(tile);
+        }
+      }
     };
   }
 
