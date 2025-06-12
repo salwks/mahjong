@@ -1,4 +1,4 @@
-// src/animation/TileAnimator.js (애니메이션 전용)
+// src/animation/TileAnimator.js (수정된 버전 - 버린 패 눕히기)
 import * as THREE from "three";
 import { gsap } from "gsap";
 
@@ -337,8 +337,34 @@ export class TileAnimator {
         .call(() => resolve(), [], 0.8);
     });
 
-    // 2단계: 정렬된 위치로 이동 + 회전 초기화 + 앞면으로 뒤집기
+    // 2단계: 정렬된 위치로 이동 + 각 플레이어에 맞는 각도로 눕히기
     await new Promise((resolve) => {
+      // 플레이어별 버린 패 각도 (각자 앞에 두고 올바르게 눕히기)
+      let rotationX, rotationY, rotationZ;
+
+      switch (playerIndex) {
+        case 0: // East (플레이어) - 아래쪽, 플레이어를 향해 눕히기
+          rotationX = Math.PI / 2; // 앞으로 눕히기
+          rotationY = 0;
+          rotationZ = 0;
+          break;
+        case 1: // South (우측) - 오른쪽, 중앙을 향해 눕히기
+          rotationX = 0;
+          rotationY = Math.PI / 2; // Y축 90도 회전
+          rotationZ = Math.PI / 2; // 그 다음 Z축으로 눕히기
+          break;
+        case 2: // West (상단) - 위쪽, 플레이어를 향해 눕히기
+          rotationX = -Math.PI / 2; // 뒤로 눕히기 (플레이어 반대 방향)
+          rotationY = 0;
+          rotationZ = 0;
+          break;
+        case 3: // North (좌측) - 왼쪽, 중앙을 향해 눕히기
+          rotationX = 0;
+          rotationY = -Math.PI / 2; // Y축 -90도 회전
+          rotationZ = -Math.PI / 2; // 그 다음 Z축으로 눕히기 (반대 방향)
+          break;
+      }
+
       this.tweens.timeline = gsap.timeline();
       this.tweens.timeline
         .to(this.tile.mesh.position, {
@@ -352,16 +378,17 @@ export class TileAnimator {
           this.tile.mesh.rotation,
           {
             duration: 0.5,
-            x: 0,
-            y: 0,
-            z: 0,
+            x: rotationX,
+            y: rotationY,
+            z: rotationZ,
             ease: "power2.out",
           },
           0
         )
         .call(
           () => {
-            this.flip(true, true, 0.3);
+            // 버린 패는 항상 앞면 공개 (모든 플레이어가 볼 수 있음)
+            this.tile.isRevealed = true;
             resolve();
           },
           [],
@@ -397,20 +424,10 @@ export class TileAnimator {
           z: correctPosition.z,
           ease: "power2.out",
         })
-        .to(
-          this.tile.mesh.rotation,
-          {
-            duration: 0.3,
-            x: 0,
-            y: 0,
-            z: 0,
-            ease: "power2.out",
-          },
-          0
-        )
         .call(
           () => {
             this.tile.position.copy(correctPosition);
+            // 회전은 discardWithRule에서 이미 설정됨 (각 플레이어별로 다름)
             resolve();
           },
           [],

@@ -316,15 +316,28 @@ export class MahjongGame {
 
     console.log(`${player.name}이 ${tile.toString()}을(를) 버렸습니다.`);
 
-    // MahjongTile의 discardWithRule 메서드 사용 (마작룰 적용)
-    const discardPosition = this.getDiscardPosition(
-      playerIndex,
-      this.discardPiles[playerIndex].length - 1
-    );
-    await tile.discardWithRule(discardPosition, playerIndex);
+    // PlayerGroupManager를 통해 버린 패 배치
+    if (this.sceneManager.playerGroupManager) {
+      await this.sceneManager.playerGroupManager.arrangeDiscardedTile(
+        tile,
+        playerIndex,
+        this.discardPiles[playerIndex].length - 1
+      );
 
-    // 전체 버린패 재정렬
-    await this.reorganizeDiscardPile(playerIndex);
+      // 전체 버린패 재정렬
+      await this.sceneManager.playerGroupManager.reorganizeDiscardPile(
+        playerIndex,
+        this.discardPiles[playerIndex]
+      );
+    } else {
+      // 기존 방식 fallback
+      const discardPosition = this.getDiscardPosition(
+        playerIndex,
+        this.discardPiles[playerIndex].length - 1
+      );
+      await tile.discardWithRule(discardPosition, playerIndex);
+      await this.reorganizeDiscardPile(playerIndex);
+    }
 
     // MahjongPlayer의 arrangeHand로 손패 재정렬
     await player.arrangeHand(this.sceneManager);
@@ -334,35 +347,38 @@ export class MahjongGame {
     this.nextTurn();
   }
 
+  // 기존 메서드들 (fallback용으로 유지)
   getDiscardPosition(playerIndex, discardIndex) {
-    const tileWidth = 0.5;
+    const tileWidth = 0.6;
+    const tileDepth = 0.4;
     const tilesPerRow = 6;
     const row = Math.floor(discardIndex / tilesPerRow);
     const col = discardIndex % tilesPerRow;
 
+    // 각 플레이어 앞에 버린 패 배치 (겹치지 않도록 간격 조정)
     switch (playerIndex) {
-      case 0: // East (플레이어) - 하단 중앙에서 위로
+      case 0: // East (플레이어) - 플레이어 앞쪽에 배치
         return new THREE.Vector3(
           (col - (tilesPerRow - 1) / 2) * tileWidth,
-          0.02, // 낮게 배치 (눕힌 상태)
-          1.5 + row * 0.4
+          0.03,
+          2.0 + row * tileDepth
         );
-      case 1: // South (우측) - 우측 중앙에서 왼쪽으로
+      case 1: // South (우측) - 우측 플레이어 앞쪽에 배치
         return new THREE.Vector3(
-          1.5 - row * 0.4,
-          0.02, // 낮게 배치
+          2.0 - row * tileDepth,
+          0.03,
           (col - (tilesPerRow - 1) / 2) * tileWidth
         );
-      case 2: // West (상단) - 상단 중앙에서 아래로
+      case 2: // West (상단) - 상단 플레이어 앞쪽에 배치
         return new THREE.Vector3(
           -(col - (tilesPerRow - 1) / 2) * tileWidth,
-          0.02, // 낮게 배치
-          -1.5 - row * 0.4
+          0.03,
+          -2.0 - row * tileDepth
         );
-      case 3: // North (좌측) - 좌측 중앙에서 오른쪽으로
+      case 3: // North (좌측) - 좌측 플레이어 앞쪽에 배치
         return new THREE.Vector3(
-          -1.5 + row * 0.4,
-          0.02, // 낮게 배치
+          -2.0 + row * tileDepth,
+          0.03,
           -(col - (tilesPerRow - 1) / 2) * tileWidth
         );
     }
@@ -370,10 +386,19 @@ export class MahjongGame {
 
   async reorganizeDiscardPile(playerIndex) {
     const discardPile = this.discardPiles[playerIndex];
+    const playerName = this.players[playerIndex].name;
 
-    // 각 타일의 reorganize 메서드 사용
+    console.log(`${playerName}의 버린패 재정렬: ${discardPile.length}장`);
+
+    // 각 타일의 reorganize 메서드 사용 (시간순 정렬)
     const reorganizePromises = discardPile.map((tile, index) => {
       const correctPosition = this.getDiscardPosition(playerIndex, index);
+
+      // 가장 최근에 버린 패 강조 표시
+      if (index === discardPile.length - 1) {
+        console.log(`최근 버린패: ${tile.toString()} at position ${index}`);
+      }
+
       return tile.reorganize(correctPosition);
     });
 
