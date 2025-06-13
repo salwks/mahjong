@@ -1,4 +1,4 @@
-// src/game/MahjongGame.js (수정된 버전 - 패 배분 문제 해결)
+// src/game/MahjongGame.js (완전한 버전 - UnifiedPlayerManager 사용)
 import { MahjongTile } from "./MahjongTile.js";
 import { MahjongPlayer } from "./MahjongPlayer.js";
 import { HandEvaluator } from "./HandEvaluator.js";
@@ -26,7 +26,7 @@ export class MahjongGame {
     this.currentPlayerIndex = 0;
     this.dealerIndex = 0;
 
-    // 패 관리 (TileManager는 init에서 생성)
+    // 패 관리 (UnifiedPlayerManager는 init에서 생성)
     this.tileManager = null;
     this.wallTiles = [];
     this.discardPiles = [[], [], [], []]; // 각 플레이어별 버린패
@@ -40,8 +40,8 @@ export class MahjongGame {
     this._onPlayerTurn = null;
     this._onRoundEnd = null;
 
-    // 디버그 모드
-    this.debugMode = true;
+    // 디버그 모드 (기본값 false)
+    this.debugMode = false;
   }
 
   // 콜백 setter/getter
@@ -67,24 +67,27 @@ export class MahjongGame {
   async init() {
     console.log("🀄 마작 게임 초기화 중...");
 
-    // TileManager 동적 생성
     try {
-      const { TileManager } = await import("./TileManager.js");
-      this.tileManager = new TileManager(this.sceneManager);
+      // UnifiedPlayerManager 동적 생성
+      const { UnifiedPlayerManager } = await import("./PlayerTemplate.js");
+      this.tileManager = new UnifiedPlayerManager(this.sceneManager);
+
+      // 디버그 모드 설정 (기본적으로 비활성화)
+      this.tileManager.setDebugMode(this.debugMode);
 
       // 겹침 문제 사전 해결
       this.tileManager.fixOverlappingTiles();
 
-      console.log("✅ TileManager 생성 완료");
+      console.log("✅ UnifiedPlayerManager 생성 완료");
     } catch (error) {
-      console.error("❌ TileManager 생성 실패:", error);
+      console.error("❌ UnifiedPlayerManager 생성 실패:", error);
       this.tileManager = this.createFallbackTileManager();
     }
 
     this.createPlayers();
     this.createInitialWall();
 
-    // 테스트 모드로 패 배치 확인
+    // 테스트 모드는 디버그 모드일 때만 실행
     if (this.debugMode && this.tileManager.testAllLayouts) {
       console.log("=== 패 배치 테스트 모드 ===");
       this.tileManager.testAllLayouts();
@@ -94,12 +97,12 @@ export class MahjongGame {
   }
 
   createFallbackTileManager() {
+    console.log("⚠️ Fallback UnifiedPlayerManager 사용");
     return {
       arrangePlayerHand: (playerIndex, handTiles) => {
         console.log(
           `Fallback: 플레이어 ${playerIndex} 손패 ${handTiles.length}장 배치`
         );
-        // 기본 위치에 배치
         const baseX = playerIndex * 3;
         handTiles.forEach((tile, index) => {
           tile.setPosition(baseX + index * 0.6, 0.35, 0);
@@ -110,7 +113,9 @@ export class MahjongGame {
           `Fallback: 플레이어 ${playerIndex} 버린패 ${discardTiles.length}장 배치`
         );
       },
-      setDebugMode: () => {},
+      setDebugMode: (enabled) => {
+        console.log(`Fallback PlayerManager 디버그 모드: ${enabled}`);
+      },
       validateTilePositions: () => ({ issues: [] }),
       addTileToPlayerHand: (playerIndex, tile, handTiles) => {
         handTiles.push(tile);
@@ -233,10 +238,10 @@ export class MahjongGame {
     this.roundState = "playing";
     this.players.forEach((player) => player.resetForNewRound());
 
-    // 각 플레이어에게 패 배분 (수정된 버전)
+    // 각 플레이어에게 패 배분
     await this.distributeInitialHands();
 
-    // 패 배치 (TileManager 사용)
+    // 패 배치 (UnifiedPlayerManager 사용)
     this.arrangeAllPlayerHands();
 
     this.updateGameState();
@@ -288,7 +293,7 @@ export class MahjongGame {
   }
 
   arrangeAllPlayerHands() {
-    console.log("=== 모든 플레이어 손패 배치 (TileManager 사용) ===");
+    console.log("=== 모든 플레이어 손패 배치 (UnifiedPlayerManager 사용) ===");
 
     this.players.forEach((player, index) => {
       if (player.hand.length === 0) {
@@ -299,32 +304,35 @@ export class MahjongGame {
       // 패 정렬
       player.sortHand();
 
-      // TileManager로 배치
+      // UnifiedPlayerManager로 배치
       this.tileManager.arrangePlayerHand(index, player.hand);
 
-      // 검증
-      const validation = this.tileManager.validateTilePositions(
-        index,
-        player.hand,
-        "hand"
-      );
-
-      if (validation.issues.length > 0) {
-        console.warn(`플레이어 ${index} 손패 배치 문제:`, validation.issues);
-      } else {
-        console.log(
-          `✅ 플레이어 ${index} (${player.name}) 손패 배치 성공 - ${player.hand.length}장`
+      // 검증 (디버그 모드일 때만)
+      if (this.debugMode) {
+        const validation = this.tileManager.validateTilePositions(
+          index,
+          player.hand,
+          "hand"
         );
-      }
 
-      // 회전 상태 확인 (디버그)
-      if (this.debugMode && player.hand.length > 0) {
-        const firstTile = player.hand[0];
-        if (firstTile.mesh) {
-          const yRotDeg = ((firstTile.mesh.rotation.y * 180) / Math.PI).toFixed(
-            0
+        if (validation.issues.length > 0) {
+          console.warn(`플레이어 ${index} 손패 배치 문제:`, validation.issues);
+        } else {
+          console.log(
+            `✅ 플레이어 ${index} (${player.name}) 손패 배치 성공 - ${player.hand.length}장`
           );
-          console.log(`  → 플레이어 ${index} 패 회전: ${yRotDeg}도`);
+        }
+
+        // 회전 상태 확인
+        if (player.hand.length > 0) {
+          const firstTile = player.hand[0];
+          if (firstTile.mesh) {
+            const yRotDeg = (
+              (firstTile.mesh.rotation.y * 180) /
+              Math.PI
+            ).toFixed(0);
+            console.log(`  → 플레이어 ${index} 패 회전: ${yRotDeg}도`);
+          }
         }
       }
     });
@@ -429,8 +437,20 @@ export class MahjongGame {
 
   // === 디버그 및 테스트 메서드들 ===
 
-  // 특정 플레이어의 패 배치 테스트
+  setDebugMode(enabled) {
+    this.debugMode = enabled;
+    if (this.tileManager && this.tileManager.setDebugMode) {
+      this.tileManager.setDebugMode(enabled);
+    }
+    console.log(`게임 디버그 모드: ${enabled ? "활성화" : "비활성화"}`);
+  }
+
   testPlayerTileLayout(playerIndex) {
+    if (!this.debugMode) {
+      console.log("디버그 모드가 아니므로 테스트를 건너뜁니다.");
+      return;
+    }
+
     console.log(`=== 플레이어 ${playerIndex} 패 배치 테스트 ===`);
 
     const player = this.players[playerIndex];
@@ -486,7 +506,7 @@ export class MahjongGame {
     );
 
     // 위치 정보 출력
-    if (this.debugMode) {
+    if (handValidation.positions.length > 0) {
       console.log("손패 위치 정보:");
       handValidation.positions.slice(0, 5).forEach((pos) => {
         console.log(
@@ -498,7 +518,6 @@ export class MahjongGame {
     }
   }
 
-  // 테스트용 손패 생성
   generateTestHand(playerIndex) {
     const player = this.players[playerIndex];
     const testTiles = [];
@@ -537,16 +556,25 @@ export class MahjongGame {
     );
   }
 
-  // 모든 플레이어 패 배치 테스트
   testAllTileLayouts() {
     console.log("=== 전체 플레이어 패 배치 테스트 ===");
+
+    if (!this.debugMode) {
+      console.log("디버그 모드가 아니므로 간단한 정보만 표시합니다.");
+      this.players.forEach((player, index) => {
+        console.log(
+          `플레이어 ${index} (${player.name}): 손패 ${player.hand.length}장`
+        );
+      });
+      return;
+    }
+
     for (let i = 0; i < 4; i++) {
       this.testPlayerTileLayout(i);
       console.log("");
     }
   }
 
-  // 버린패 시뮬레이션
   simulateDiscards(count = 6) {
     console.log(`=== 버린패 시뮬레이션 (${count}장) ===`);
 
@@ -582,7 +610,6 @@ export class MahjongGame {
     console.log("✅ 버린패 시뮬레이션 완료");
   }
 
-  // 즉시 패 배치 (애니메이션 없이)
   instantArrangeAll() {
     console.log("=== 즉시 패 배치 ===");
 
@@ -612,7 +639,6 @@ export class MahjongGame {
     console.log("✅ 즉시 패 배치 완료");
   }
 
-  // 겹침 문제 해결
   fixTileOverlapping() {
     console.log("=== 패 겹침 문제 해결 ===");
 
@@ -659,10 +685,10 @@ export class MahjongGame {
       discardCounts: this.discardPiles.map((pile) => pile.length),
       playerHandCounts: this.players.map((player) => player.hand.length),
       tileManagerStatus: this.tileManager ? "활성" : "비활성",
+      debugMode: this.debugMode,
     };
   }
 
-  // 타일 버리기 핸들러 (외부 이벤트용)
   handleTileDiscard(tile) {
     console.log("게임: 타일 버리기 요청 받음:", tile.toString());
     return this.handleDiscard(0, tile);
@@ -688,7 +714,7 @@ export class MahjongGame {
       if (tile.dispose) tile.dispose();
     });
 
-    // TileManager 정리
+    // UnifiedPlayerManager 정리
     if (this.tileManager) {
       this.tileManager.dispose();
     }
