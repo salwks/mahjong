@@ -1,4 +1,4 @@
-// src/game/MahjongPlayer.js (수정된 버전)
+// src/game/MahjongPlayer.js (완성된 버전 - TileManager 사용)
 export class MahjongPlayer {
   constructor(index, isHuman, name, wind) {
     this.index = index;
@@ -94,100 +94,19 @@ export class MahjongPlayer {
     return this.hand.map((tile) => tile.toString()).join(" ");
   }
 
-  // === 손패 배치 (수정된 버전) ===
+  // === 손패 배치 (TileManager 사용) ===
 
   async arrangeHand(sceneManager) {
-    // 패 정렬
-    this.sortHand();
+    console.log(`${this.name} arrangeHand 호출됨 - TileManager로 위임`);
 
-    if (this.isHuman) {
-      await this.arrangeHumanHand();
-    } else {
-      await this.arrangeAIHand();
-    }
-  }
-
-  async arrangeHumanHand() {
-    const tileWidth = 0.55;
-    const baseX = -(this.hand.length * tileWidth) / 2;
-    const baseY = 0.35;
-    const baseZ = 4.8;
-
-    const arrangePromises = this.hand.map((tile, i) => {
-      const x = baseX + i * tileWidth;
-      const y = baseY;
-      const z = baseZ;
-
-      // 인간 플레이어 패는 선택 가능하도록 설정
-      tile.mesh.userData.selectable = true;
-
-      return tile.arrangeInHand(
-        { x, y, z },
-        { x: 0, y: 0, z: 0 }, // 앞면
-        true, // 인간 플레이어는 앞면
-        i * 0.05 // 지연시간
-      );
-    });
-
-    await Promise.all(arrangePromises);
-  }
-
-  async arrangeAIHand() {
-    const tileWidth = 0.55;
-    let baseX, baseY, baseZ, rotationY;
-
-    // 올바른 마작 방향 (각 플레이어를 기준으로 자신을 향하도록)
-    switch (this.index) {
-      case 1: // South (우측) - 중앙(플레이어)을 바라봄
-        baseX = 4.8;
-        baseY = 0.35;
-        baseZ = -(this.hand.length * tileWidth) / 2; // 수정: 중앙을 향하도록
-        rotationY = Math.PI / 2; // 수정: 중앙을 바라봄
-        break;
-      case 2: // West (상단) - 중앙(플레이어)을 바라봄
-        baseX = (this.hand.length * tileWidth) / 2;
-        baseY = 0.35;
-        baseZ = -4.8;
-        rotationY = 0; // 수정: 중앙을 바라봄 (플레이어와 같은 방향)
-        break;
-      case 3: // North (좌측) - 중앙(플레이어)을 바라봄
-        baseX = -4.8;
-        baseY = 0.35;
-        baseZ = (this.hand.length * tileWidth) / 2; // 수정: 중앙을 향하도록
-        rotationY = -Math.PI / 2; // 수정: 중앙을 바라봄
-        break;
+    // TileManager가 있으면 그것을 사용
+    if (sceneManager && sceneManager.game && sceneManager.game.tileManager) {
+      sceneManager.game.tileManager.arrangePlayerHand(this.index, this.hand);
+      return;
     }
 
-    const arrangePromises = this.hand.map((tile, i) => {
-      let x, z;
-
-      switch (this.index) {
-        case 1: // South (우측)
-          x = baseX;
-          z = baseZ + i * tileWidth;
-          break;
-        case 2: // West (상단)
-          x = baseX - i * tileWidth;
-          z = baseZ;
-          break;
-        case 3: // North (좌측)
-          x = baseX;
-          z = baseZ - i * tileWidth;
-          break;
-      }
-
-      // AI 플레이어 패는 선택 불가능하도록 설정
-      tile.mesh.userData.selectable = false;
-
-      return tile.arrangeInHand(
-        { x, y: baseY, z },
-        { x: 0, y: rotationY, z: 0 },
-        false, // AI는 뒷면
-        i * 0.03 // 지연시간
-      );
-    });
-
-    await Promise.all(arrangePromises);
+    // fallback: TileManager를 찾을 수 없는 경우
+    console.warn(`${this.name}: TileManager를 찾을 수 없음 - 배치 스킵`);
   }
 
   // === 멜드 관리 ===

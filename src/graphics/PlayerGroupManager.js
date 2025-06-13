@@ -1,4 +1,4 @@
-// src/graphics/PlayerGroupManager.js - 플레이어 그룹 관리
+// src/graphics/PlayerGroupManager.js - 수정된 버전 (버린 패 + 손패 방향 수정)
 import * as THREE from "three";
 
 export class PlayerGroupManager {
@@ -44,6 +44,23 @@ export class PlayerGroupManager {
     return positions;
   }
 
+  // 플레이어별 손패 회전 보정 (그룹 회전과 별개로 추가 회전)
+  getHandRotationCorrection(playerIndex, isHuman) {
+    // 모든 플레이어의 패가 중앙(테이블 중심)을 향하도록
+    switch (playerIndex) {
+      case 0: // East (플레이어) - 그대로
+        return new THREE.Euler(0, isHuman ? 0 : Math.PI, 0);
+      case 1: // South (우측) - 중앙을 향하도록 90도 더 회전
+        return new THREE.Euler(0, isHuman ? 0 : Math.PI, 0);
+      case 2: // West (상단) - 중앙을 향하도록 180도 더 회전
+        return new THREE.Euler(0, isHuman ? 0 : Math.PI, 0);
+      case 3: // North (좌측) - 중앙을 향하도록 -90도 더 회전
+        return new THREE.Euler(0, isHuman ? 0 : Math.PI, 0);
+      default:
+        return new THREE.Euler(0, 0, 0);
+    }
+  }
+
   // === 버린 패 배치 (기준: 플레이어 0) ===
 
   getDiscardPosition(discardIndex) {
@@ -57,10 +74,10 @@ export class PlayerGroupManager {
     return {
       position: new THREE.Vector3(
         (col - (tilesPerRow - 1) / 2) * tileWidth,
-        0.03,
+        0.03, // 바닥에 가깝게
         2.0 + row * tileDepth
       ),
-      rotation: new THREE.Euler(Math.PI / 2, 0, 0), // 눕혀서 플레이어를 향하도록
+      rotation: new THREE.Euler(Math.PI / 2, 0, 0), // 앞면이 위로 오도록 눕히기
     };
   }
 
@@ -109,17 +126,24 @@ export class PlayerGroupManager {
       this.addTileToPlayerGroup(tile, playerIndex);
 
       const targetPos = handPositions[index];
+      const rotationCorrection = this.getHandRotationCorrection(
+        playerIndex,
+        isHuman
+      );
 
       // 그룹 내 상대 좌표로 설정
       tile.mesh.position.copy(targetPos.position);
       tile.mesh.rotation.copy(targetPos.rotation);
 
+      // 플레이어별 회전 보정 적용
+      tile.mesh.rotation.x += rotationCorrection.x;
+      tile.mesh.rotation.y += rotationCorrection.y;
+      tile.mesh.rotation.z += rotationCorrection.z;
+
       // 인간 플레이어는 앞면, AI는 뒷면
       if (isHuman) {
-        tile.mesh.rotation.y = 0; // 앞면
         tile.mesh.userData.selectable = true;
       } else {
-        tile.mesh.rotation.y = Math.PI; // 뒷면
         tile.mesh.userData.selectable = false;
       }
 
@@ -163,15 +187,16 @@ export class PlayerGroupManager {
     tile.mesh.position.copy(discardPos.position);
     tile.mesh.rotation.copy(discardPos.rotation);
 
-    // 버린 패는 항상 앞면 공개
+    // 버린 패는 항상 앞면 공개 (모든 플레이어가 볼 수 있음)
     tile.isRevealed = true;
+    tile.setDiscarded(true);
 
     console.log(
       `버린패 최종 위치: (${discardPos.position.x.toFixed(
         2
       )}, ${discardPos.position.y.toFixed(2)}, ${discardPos.position.z.toFixed(
         2
-      )})`
+      )}) - 눕혀짐`
     );
   }
 

@@ -1,6 +1,5 @@
-// src/game/MahjongTile.js (간소화된 버전 - 패 로직만)
+// src/game/MahjongTile.js (간단한 버전 - 애니메이션 제거, setDiscarded 수정)
 import * as THREE from "three";
-import { TileAnimator } from "../animation/TileAnimator.js";
 
 export class MahjongTile {
   constructor(type, number, sceneManager, position = new THREE.Vector3()) {
@@ -13,16 +12,10 @@ export class MahjongTile {
     this.isSelected = false;
     this.isDiscarded = false;
     this.isRevealed = true; // 앞면이 보이는지
-    this.isAnimating = false;
     this.owner = null; // 'player0', 'player1', 'player2', 'player3', 'wall'
 
     // 3D 메시
     this.mesh = null;
-    this.originalY = position.y;
-    this.originalRotation = { x: 0, y: 0, z: 0 };
-
-    // 애니메이션 담당 객체
-    this.animator = new TileAnimator(this);
 
     this.createMesh();
   }
@@ -138,107 +131,79 @@ export class MahjongTile {
     }
   }
 
-  // === 상태 관리 ===
+  // === 상태 관리 (간단한 버전) ===
 
   setSelected(selected) {
     this.isSelected = selected;
+
+    // 간단한 선택 표시 (높이만 변경)
+    if (this.mesh) {
+      if (selected) {
+        this.mesh.position.y += 0.3;
+      } else {
+        this.mesh.position.y = this.position.y;
+      }
+    }
   }
 
   setDiscarded(discarded) {
     this.isDiscarded = discarded;
-    if (discarded) {
+    if (this.mesh && discarded) {
       this.mesh.userData.selectable = false;
     }
   }
 
   setRevealed(revealed) {
     this.isRevealed = revealed;
+    // 간단한 뒤집기 (Y축 회전)
+    if (this.mesh) {
+      this.mesh.rotation.y = revealed ? 0 : Math.PI;
+    }
   }
 
-  // === 애니메이션 메서드들 (TileAnimator로 위임) ===
+  // === 인터랙션 메서드들 (애니메이션 없는 간단한 버전) ===
 
-  // 기본 위치/회전 설정
-  setPosition(x, y, z, animate = false, duration = 0.5) {
-    return this.animator.setPosition(x, y, z, animate, duration);
-  }
-
-  setRotation(x, y, z, animate = false, duration = 0.5) {
-    return this.animator.setRotation(x, y, z, animate, duration);
-  }
-
-  flip(showFront = true, animate = true, duration = 0.4) {
-    return this.animator.flip(showFront, animate, duration);
-  }
-
-  // 인터랙션 애니메이션
   onHover(isHovering) {
-    return this.animator.onHover(isHovering);
+    // 간단한 호버 효과 (크기 변화)
+    if (!this.mesh || this.isDiscarded || this.isSelected) return;
+
+    if (isHovering) {
+      this.mesh.scale.set(1.05, 1.05, 1.05);
+      this.mesh.position.y = this.position.y + 0.1;
+    } else {
+      this.mesh.scale.set(1, 1, 1);
+      this.mesh.position.y = this.position.y;
+    }
   }
 
   select() {
+    if (!this.mesh || this.isDiscarded) return;
+
     this.setSelected(true);
-    return this.animator.select();
+    // 간단한 선택 효과 (이미 setSelected에서 처리됨)
   }
 
   deselect() {
+    if (!this.mesh) return;
+
     this.setSelected(false);
-    return this.animator.deselect();
+    // 호버 효과도 제거
+    this.mesh.scale.set(1, 1, 1);
   }
 
-  // 마작 게임 특화 애니메이션
-  async arrangeInHand(
-    targetPosition,
-    targetRotation,
-    showFront = true,
-    delay = 0
-  ) {
-    return this.animator.arrangeInHand(
-      targetPosition,
-      targetRotation,
-      showFront,
-      delay
-    );
+  // === 위치 설정 (즉시 적용) ===
+
+  setPosition(x, y, z) {
+    this.position.set(x, y, z);
+    if (this.mesh) {
+      this.mesh.position.copy(this.position);
+    }
   }
 
-  async discardWithRule(finalPosition, playerIndex) {
-    this.setDiscarded(true);
-    return this.animator.discardWithRule(finalPosition, playerIndex);
-  }
-
-  async reorganize(correctPosition) {
-    return this.animator.reorganize(correctPosition);
-  }
-
-  // 기타 애니메이션
-  discard(targetPosition, onComplete) {
-    this.setDiscarded(true);
-    return this.animator.discard(targetPosition, onComplete);
-  }
-
-  drawFromWall(targetPosition, onComplete) {
-    return this.animator.drawFromWall(targetPosition, onComplete);
-  }
-
-  shuffle(intensity = 1) {
-    return this.animator.shuffle(intensity);
-  }
-
-  moveToMeld(targetPosition, targetRotation, onComplete) {
-    return this.animator.moveToMeld(targetPosition, targetRotation, onComplete);
-  }
-
-  fadeIn(duration = 0.5) {
-    return this.animator.fadeIn(duration);
-  }
-
-  fadeOut(duration = 0.5, onComplete) {
-    return this.animator.fadeOut(duration, onComplete);
-  }
-
-  // === 애니메이션 관리 ===
-
-  killTweens() {
-    return this.animator.killTweens();
+  setRotation(x, y, z) {
+    if (this.mesh) {
+      this.mesh.rotation.set(x, y, z);
+    }
   }
 
   // === 유틸리티 ===
@@ -259,20 +224,16 @@ export class MahjongTile {
     return {
       type: this.type,
       number: this.number,
-      position: this.position,
+      position: this.position.toArray(),
       isSelected: this.isSelected,
       isDiscarded: this.isDiscarded,
       isRevealed: this.isRevealed,
-      isAnimating: this.isAnimating,
       owner: this.owner,
       toString: this.toString(),
     };
   }
 
   dispose() {
-    // 애니메이션 정리
-    this.animator.dispose();
-
     // 씬에서 제거
     if (this.mesh) {
       this.sceneManager.scene.remove(this.mesh);
@@ -286,6 +247,5 @@ export class MahjongTile {
     }
 
     this.mesh = null;
-    this.animator = null;
   }
 }

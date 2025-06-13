@@ -324,7 +324,12 @@ export class TouchController {
   updateHover(tile) {
     // 기존 호버 해제
     if (this.hoveredTile && this.hoveredTile !== tile) {
-      this.hoveredTile.onHover(false);
+      if (
+        this.hoveredTile.onHover &&
+        typeof this.hoveredTile.onHover === "function"
+      ) {
+        this.hoveredTile.onHover(false);
+      }
     }
 
     // 새 호버 적용 (선택 가능한 타일만)
@@ -333,11 +338,14 @@ export class TouchController {
       tile !== this.selectedTile &&
       !tile.isAnimating &&
       !tile.isDiscarded &&
+      tile.mesh &&
       tile.mesh.userData.selectable &&
       tile.owner === "player0" // 인간 플레이어 패만
     ) {
       this.hoveredTile = tile;
-      tile.onHover(true);
+      if (tile.onHover && typeof tile.onHover === "function") {
+        tile.onHover(true);
+      }
 
       // 호버 콜백
       if (this.onTileHover) {

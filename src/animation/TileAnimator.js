@@ -1,4 +1,4 @@
-// src/animation/TileAnimator.js (수정된 버전 - 버린 패 눕히기)
+// src/animation/TileAnimator.js (완성된 버전 - 버린 패 눕히기 수정)
 import * as THREE from "three";
 import { gsap } from "gsap";
 
@@ -337,33 +337,12 @@ export class TileAnimator {
         .call(() => resolve(), [], 0.8);
     });
 
-    // 2단계: 정렬된 위치로 이동 + 각 플레이어에 맞는 각도로 눕히기
+    // 2단계: 정렬된 위치로 이동 + 모든 플레이어가 볼 수 있도록 눕히기
     await new Promise((resolve) => {
-      // 플레이어별 버린 패 각도 (각자 앞에 두고 올바르게 눕히기)
-      let rotationX, rotationY, rotationZ;
-
-      switch (playerIndex) {
-        case 0: // East (플레이어) - 아래쪽, 플레이어를 향해 눕히기
-          rotationX = Math.PI / 2; // 앞으로 눕히기
-          rotationY = 0;
-          rotationZ = 0;
-          break;
-        case 1: // South (우측) - 오른쪽, 중앙을 향해 눕히기
-          rotationX = 0;
-          rotationY = Math.PI / 2; // Y축 90도 회전
-          rotationZ = Math.PI / 2; // 그 다음 Z축으로 눕히기
-          break;
-        case 2: // West (상단) - 위쪽, 플레이어를 향해 눕히기
-          rotationX = -Math.PI / 2; // 뒤로 눕히기 (플레이어 반대 방향)
-          rotationY = 0;
-          rotationZ = 0;
-          break;
-        case 3: // North (좌측) - 왼쪽, 중앙을 향해 눕히기
-          rotationX = 0;
-          rotationY = -Math.PI / 2; // Y축 -90도 회전
-          rotationZ = -Math.PI / 2; // 그 다음 Z축으로 눕히기 (반대 방향)
-          break;
-      }
+      // 모든 플레이어의 버린 패는 앞면이 위로 오도록 눕히기 (그룹 회전으로 자동 처리)
+      const rotationX = Math.PI / 2; // 앞면이 위로 오도록 X축 90도 회전
+      const rotationY = 0;
+      const rotationZ = 0;
 
       this.tweens.timeline = gsap.timeline();
       this.tweens.timeline
@@ -427,7 +406,7 @@ export class TileAnimator {
         .call(
           () => {
             this.tile.position.copy(correctPosition);
-            // 회전은 discardWithRule에서 이미 설정됨 (각 플레이어별로 다름)
+            // 회전은 discardWithRule에서 이미 설정됨 (그룹 회전으로 처리)
             resolve();
           },
           [],

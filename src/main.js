@@ -1,11 +1,9 @@
-// src/main.js (올바른 import와 클래스 사용)
+// src/main.js (안전한 버전 - 오류 처리 강화)
 import * as THREE from "three";
 import { gsap } from "gsap";
-import { SceneManager } from "./graphics/SceneManager.js";
-import { MahjongGame } from "./game/MahjongGame.js";
-import { TouchController } from "./input/TouchController.js";
-import { SimpleGameUI } from "./ui/SimpleGameUI.js";
-import { EventManager } from "./events/EventManager.js";
+
+// 안전한 import
+let SceneManager, MahjongGame, TouchController, SimpleGameUI, EventManager;
 
 class MahjongApp {
   constructor() {
@@ -43,37 +41,50 @@ class MahjongApp {
         duration: 0.5,
       });
 
-      // 1. 3D 씬 관리자 초기화
+      // 1. 모듈 동적 import
+      await this.loadModules();
+
+      // 2. 3D 씬 관리자 초기화
       this.updateLoadingText("3D 씬 초기화 중...");
-      this.sceneManager = new SceneManager(this.canvas);
-      await this.sceneManager.init();
+      if (SceneManager) {
+        this.sceneManager = new SceneManager(this.canvas);
+        await this.sceneManager.init();
+      }
 
-      // 2. 게임 로직 초기화
+      // 3. 게임 로직 초기화
       this.updateLoadingText("게임 시스템 초기화 중...");
-      this.game = new MahjongGame(this.sceneManager);
-      await this.game.init();
+      if (MahjongGame && this.sceneManager) {
+        this.game = new MahjongGame(this.sceneManager);
+        await this.game.init();
+      }
 
-      // 3. 입력 컨트롤러 초기화
+      // 4. 입력 컨트롤러 초기화
       this.updateLoadingText("입력 시스템 초기화 중...");
-      this.touchController = new TouchController(
-        this.sceneManager.camera,
-        this.sceneManager.scene,
-        this.canvas
-      );
+      if (TouchController && this.sceneManager) {
+        this.touchController = new TouchController(
+          this.sceneManager.camera,
+          this.sceneManager.scene,
+          this.canvas
+        );
+      }
 
-      // 4. SimpleGameUI 초기화
+      // 5. SimpleGameUI 초기화
       this.updateLoadingText("UI 초기화 중...");
-      this.ui = new SimpleGameUI();
+      if (SimpleGameUI) {
+        this.ui = new SimpleGameUI();
+      }
 
-      // 5. EventManager 초기화
+      // 6. EventManager 초기화
       this.updateLoadingText("이벤트 시스템 초기화 중...");
-      this.eventManager = new EventManager(
-        this.game,
-        this.ui,
-        this.touchController
-      );
+      if (EventManager) {
+        this.eventManager = new EventManager(
+          this.game,
+          this.ui,
+          this.touchController
+        );
+      }
 
-      // 6. 윈도우 이벤트 설정
+      // 7. 윈도우 이벤트 설정
       this.setupWindowEvents();
 
       // 초기화 완료
@@ -86,6 +97,52 @@ class MahjongApp {
       console.error("초기화 실패:", error);
       this.handleError(error.message);
     }
+  }
+
+  async loadModules() {
+    console.log("📦 모듈 로딩 중...");
+
+    try {
+      const sceneModule = await import("./graphics/SceneManager.js");
+      SceneManager = sceneModule.SceneManager;
+      console.log("✅ SceneManager 로드 완료");
+    } catch (error) {
+      console.error("❌ SceneManager 로드 실패:", error);
+    }
+
+    try {
+      const gameModule = await import("./game/MahjongGame.js");
+      MahjongGame = gameModule.MahjongGame;
+      console.log("✅ MahjongGame 로드 완료");
+    } catch (error) {
+      console.error("❌ MahjongGame 로드 실패:", error);
+    }
+
+    try {
+      const touchModule = await import("./input/TouchController.js");
+      TouchController = touchModule.TouchController;
+      console.log("✅ TouchController 로드 완료");
+    } catch (error) {
+      console.error("❌ TouchController 로드 실패:", error);
+    }
+
+    try {
+      const uiModule = await import("./ui/SimpleGameUI.js");
+      SimpleGameUI = uiModule.SimpleGameUI;
+      console.log("✅ SimpleGameUI 로드 완료");
+    } catch (error) {
+      console.error("❌ SimpleGameUI 로드 실패:", error);
+    }
+
+    try {
+      const eventModule = await import("./events/EventManager.js");
+      EventManager = eventModule.EventManager;
+      console.log("✅ EventManager 로드 완료");
+    } catch (error) {
+      console.error("❌ EventManager 로드 실패:", error);
+    }
+
+    console.log("📦 모듈 로딩 완료");
   }
 
   setupWindowEvents() {
@@ -182,7 +239,9 @@ class MahjongApp {
         await this.game.startNewGame();
 
         // 입력 활성화
-        this.touchController.setEnabled(true);
+        if (this.touchController) {
+          this.touchController.setEnabled(true);
+        }
 
         if (this.ui && this.ui.showMessage) {
           this.ui.showMessage("게임이 시작되었습니다!", "success", 2000);
@@ -300,3 +359,365 @@ document.addEventListener("DOMContentLoaded", () => {
     console.error("앱 시작 실패:", error);
   }
 });
+
+// 전역 디버그 함수들
+window.debugTiles = {
+  // 1. 모든 플레이어 패 배치 테스트
+  testAll: () => {
+    if (window.mahjongApp && window.mahjongApp.game) {
+      try {
+        window.mahjongApp.game.testAllTileLayouts();
+      } catch (error) {
+        console.error("testAll 실행 중 오류:", error);
+      }
+    } else {
+      console.error("게임이 초기화되지 않았습니다.");
+    }
+  },
+
+  // 2. 특정 플레이어 테스트
+  testPlayer: (playerIndex) => {
+    if (window.mahjongApp && window.mahjongApp.game) {
+      try {
+        window.mahjongApp.game.testPlayerTileLayout(playerIndex);
+      } catch (error) {
+        console.error("testPlayer 실행 중 오류:", error);
+      }
+    } else {
+      console.error("게임이 초기화되지 않았습니다.");
+    }
+  },
+
+  // 3. 버린패 시뮬레이션
+  simulateDiscards: (count = 6) => {
+    if (window.mahjongApp && window.mahjongApp.game) {
+      try {
+        window.mahjongApp.game.simulateDiscards(count);
+      } catch (error) {
+        console.error("simulateDiscards 실행 중 오류:", error);
+      }
+    } else {
+      console.error("게임이 초기화되지 않았습니다.");
+    }
+  },
+
+  // 4. 즉시 재배치
+  rearrangeAll: () => {
+    if (window.mahjongApp && window.mahjongApp.game) {
+      try {
+        window.mahjongApp.game.instantArrangeAll();
+      } catch (error) {
+        console.error("rearrangeAll 실행 중 오류:", error);
+      }
+    } else {
+      console.error("게임이 초기화되지 않았습니다.");
+    }
+  },
+
+  // 5. TileManager 레이아웃 테스트
+  testLayouts: () => {
+    if (
+      window.mahjongApp &&
+      window.mahjongApp.game &&
+      window.mahjongApp.game.tileManager
+    ) {
+      try {
+        window.mahjongApp.game.tileManager.testAllLayouts();
+      } catch (error) {
+        console.error("testLayouts 실행 중 오류:", error);
+      }
+    } else {
+      console.error("TileManager가 초기화되지 않았습니다.");
+    }
+  },
+
+  // 6. 디버그 모드 토글
+  toggleDebug: () => {
+    if (
+      window.mahjongApp &&
+      window.mahjongApp.game &&
+      window.mahjongApp.game.tileManager
+    ) {
+      try {
+        const current = window.mahjongApp.game.debugMode;
+        window.mahjongApp.game.debugMode = !current;
+        if (window.mahjongApp.game.tileManager.setDebugMode) {
+          window.mahjongApp.game.tileManager.setDebugMode(!current);
+        }
+        console.log(`디버그 모드: ${!current ? "활성화" : "비활성화"}`);
+      } catch (error) {
+        console.error("toggleDebug 실행 중 오류:", error);
+      }
+    }
+  },
+
+  // 7. 게임 상태 확인
+  status: () => {
+    if (window.mahjongApp && window.mahjongApp.game) {
+      try {
+        const debug = window.mahjongApp.game.getDebugInfo();
+        console.table(debug.players);
+        console.log("상세 정보:", debug);
+      } catch (error) {
+        console.error("status 실행 중 오류:", error);
+      }
+    } else {
+      console.error("게임이 초기화되지 않았습니다.");
+    }
+  },
+
+  // 8. 안전한 게임 시작 (디버그 없이)
+  safeStart: () => {
+    if (window.mahjongApp && window.mahjongApp.game) {
+      try {
+        // 디버그 모드 끄기
+        window.mahjongApp.game.debugMode = false;
+        if (
+          window.mahjongApp.game.tileManager &&
+          window.mahjongApp.game.tileManager.setDebugMode
+        ) {
+          window.mahjongApp.game.tileManager.setDebugMode(false);
+        }
+
+        // 게임 시작
+        window.mahjongApp.game.startNewGame();
+        console.log("✅ 게임이 안전하게 시작되었습니다.");
+      } catch (error) {
+        console.error("safeStart 실행 중 오류:", error);
+      }
+    } else {
+      console.error("게임이 초기화되지 않았습니다.");
+    }
+  },
+
+  // 9. 패 회전 상태 확인
+  checkRotations: () => {
+    if (!window.mahjongApp || !window.mahjongApp.game) {
+      console.error("게임이 초기화되지 않았습니다.");
+      return;
+    }
+
+    console.log("=== 패 회전 상태 확인 ===");
+
+    for (let playerIndex = 0; playerIndex < 4; playerIndex++) {
+      const player = window.mahjongApp.game.players[playerIndex];
+      if (!player || player.hand.length === 0) {
+        console.log(`플레이어 ${playerIndex}: 손패 없음`);
+        continue;
+      }
+
+      console.log(`\n플레이어 ${playerIndex} (${player.name}):`);
+
+      // TileManager 설정 확인
+      if (
+        window.mahjongApp.game.tileManager &&
+        window.mahjongApp.game.tileManager.playerPositions
+      ) {
+        const config =
+          window.mahjongApp.game.tileManager.playerPositions[playerIndex];
+        if (config) {
+          const expectedRotation = config.hand.rotation;
+          console.log(
+            `  설정된 회전: (${expectedRotation.x.toFixed(
+              2
+            )}, ${expectedRotation.y.toFixed(2)}, ${expectedRotation.z.toFixed(
+              2
+            )})`
+          );
+        }
+      }
+
+      // 실제 패들의 회전 확인 (처음 3장만)
+      console.log(`  실제 패들 회전:`);
+      player.hand.slice(0, 3).forEach((tile, i) => {
+        if (tile.mesh) {
+          const rotation = tile.mesh.rotation;
+          console.log(
+            `    패 ${i} (${tile.toString()}): (${rotation.x.toFixed(
+              2
+            )}, ${rotation.y.toFixed(2)}, ${rotation.z.toFixed(2)})`
+          );
+        }
+      });
+
+      // 회전각 분석
+      if (player.hand.length > 0 && player.hand[0].mesh) {
+        const yRotation = player.hand[0].mesh.rotation.y;
+        const degrees = ((yRotation * 180) / Math.PI).toFixed(0);
+        console.log(`  → Y축 회전: ${degrees}도`);
+      }
+    }
+
+    console.log("\n=== 회전 분석 완료 ===");
+  },
+
+  // 10. 특정 플레이어 회전 강제 적용
+  forceRotation: (playerIndex, degrees) => {
+    if (!window.mahjongApp || !window.mahjongApp.game) {
+      console.error("게임이 초기화되지 않았습니다.");
+      return;
+    }
+
+    const player = window.mahjongApp.game.players[playerIndex];
+    if (!player) {
+      console.error(`플레이어 ${playerIndex}를 찾을 수 없습니다.`);
+      return;
+    }
+
+    const radians = (degrees * Math.PI) / 180;
+    console.log(`플레이어 ${playerIndex} 패들을 ${degrees}도로 회전 적용`);
+
+    player.hand.forEach((tile, i) => {
+      if (tile.mesh) {
+        tile.mesh.rotation.y = radians;
+        console.log(`  패 ${i} (${tile.toString()}) 회전 적용: ${degrees}도`);
+      }
+    });
+
+    console.log("✅ 회전 적용 완료");
+  },
+
+  // 11. 초기화 상태 확인
+  checkInit: () => {
+    console.log("=== 초기화 상태 확인 ===");
+
+    if (!window.mahjongApp) {
+      console.log("❌ window.mahjongApp이 없음");
+      return;
+    }
+
+    console.log("✅ MahjongApp 존재");
+    console.log("  - isInitialized:", window.mahjongApp.isInitialized);
+
+    if (window.mahjongApp.sceneManager) {
+      console.log("✅ SceneManager 존재");
+    } else {
+      console.log("❌ SceneManager 없음");
+    }
+
+    if (window.mahjongApp.game) {
+      console.log("✅ Game 존재");
+      if (window.mahjongApp.game.tileManager) {
+        console.log("✅ TileManager 존재");
+      } else {
+        console.log("❌ TileManager 없음");
+      }
+    } else {
+      console.log("❌ Game 없음");
+    }
+
+    if (window.mahjongApp.touchController) {
+      console.log("✅ TouchController 존재");
+    } else {
+      console.log("❌ TouchController 없음");
+    }
+
+    if (window.mahjongApp.ui) {
+      console.log("✅ UI 존재");
+    } else {
+      console.log("❌ UI 없음");
+    }
+
+    if (window.mahjongApp.eventManager) {
+      console.log("✅ EventManager 존재");
+    } else {
+      console.log("❌ EventManager 없음");
+    }
+  },
+
+  // 12. 강제 초기화
+  forceInit: async () => {
+    console.log("🔧 강제 초기화 시도...");
+
+    if (!window.mahjongApp) {
+      console.error("MahjongApp이 없어서 초기화할 수 없습니다.");
+      return;
+    }
+
+    try {
+      if (!window.mahjongApp.isInitialized) {
+        console.log("초기화 재시도...");
+        await window.mahjongApp.init();
+      }
+
+      if (window.mahjongApp.loadingScreen) {
+        window.mahjongApp.loadingScreen.style.display = "none";
+        console.log("✅ 로딩 화면 제거");
+      }
+
+      if (window.mahjongApp.showStartMenu) {
+        window.mahjongApp.showStartMenu();
+        console.log("✅ 시작 메뉴 표시");
+      }
+    } catch (error) {
+      console.error("강제 초기화 실패:", error);
+    }
+  },
+
+  // 13. 도움말
+  help: () => {
+    console.log(`
+🀄 마작 타일 디버그 명령어:
+
+🚨 로딩 화면에서 멈춘 경우:
+debugTiles.checkInit()        - 초기화 상태 확인
+debugTiles.forceInit()        - 강제 초기화 시도
+
+기본 명령어:
+debugTiles.safeStart()         - 안전한 게임 시작 (디버그 없이)
+debugTiles.status()           - 게임 상태 확인
+debugTiles.checkRotations()   - 패 회전 상태 확인 ⭐ 
+debugTiles.forceRotation(1, -90) - 플레이어1 패를 -90도로 강제 회전 ⭐
+
+테스트 명령어:
+debugTiles.testAll()           - 모든 플레이어 패 배치 테스트
+debugTiles.testPlayer(0-3)     - 특정 플레이어 테스트
+debugTiles.simulateDiscards(6) - 버린패 시뮬레이션
+debugTiles.rearrangeAll()      - 모든 패 즉시 재배치
+debugTiles.testLayouts()       - TileManager 레이아웃 테스트
+debugTiles.toggleDebug()       - 디버그 모드 ON/OFF
+
+🔧 문제 해결 단계:
+1. debugTiles.checkInit()      - 초기화 상태 확인
+2. debugTiles.forceInit()      - 문제 있으면 강제 초기화
+3. debugTiles.safeStart()      - 게임 시작
+4. debugTiles.checkRotations() - 회전 상태 확인
+
+회전 문제 해결:
+debugTiles.forceRotation(1, -90) - 우측 플레이어 -90도 강제 적용
+debugTiles.forceRotation(3, 90)  - 좌측 플레이어 +90도 강제 적용
+    `);
+  },
+};
+
+// 초기 도움말 표시 및 게임 상태 확인
+setTimeout(() => {
+  console.log(`
+🎮 마작 게임 로드 완료!
+
+⚠️ 게임이 로딩 화면에서 멈춰있다면:
+
+1. 브라우저 콘솔에서 오류 메시지 확인
+2. debugTiles.forceInit() - 강제 초기화 시도
+3. debugTiles.checkInit() - 초기화 상태 확인
+
+정상 작동 시:
+1. debugTiles.safeStart()  - 안전한 게임 시작
+2. debugTiles.status()     - 게임 상태 확인
+3. debugTiles.help()       - 전체 명령어 보기
+
+게임 시작 후 각종 테스트를 진행할 수 있습니다.
+`);
+
+  // 게임 상태 확인
+  if (window.mahjongApp) {
+    console.log("✅ MahjongApp 초기화됨");
+    if (window.mahjongApp.isInitialized) {
+      console.log("✅ 게임 시스템 초기화 완료");
+    } else {
+      console.log("❌ 게임 시스템 초기화 실패 - debugTiles.forceInit() 시도");
+    }
+  } else {
+    console.log("❌ MahjongApp 초기화 실패");
+  }
+}, 2000); // 2초 후 실행
