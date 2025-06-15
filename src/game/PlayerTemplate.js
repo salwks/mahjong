@@ -1,254 +1,309 @@
-// src/game/PlayerTemplate.js - 완전히 새로 작성 (angle 변수 문제 해결)
+// src/game/PlayerTemplate.js - A방식: 패가 플레이어를 향하도록 회전
 import * as THREE from "three";
+import { MahjongTile } from "./MahjongTile.js";
 
-export class UnifiedPlayerManager {
-  constructor(sceneManager) {
+class PlayerTemplate {
+  constructor(sceneManager, playerIndex, position, rotation = 0) {
     this.sceneManager = sceneManager;
-    this.debugMode = false;
+    this.playerIndex = playerIndex;
+    this.isHuman = playerIndex === 0; // 플레이어 0만 인간
 
-    // 🎯 기준 템플릿 (플레이어 0번만 완벽하게 정의)
-    this.template = {
-      hand: {
-        basePosition: new THREE.Vector3(0, 0.35, 5.0),
-        spacing: 0.58,
-        direction: new THREE.Vector3(1, 0, 0), // X축 방향
-      },
-      discard: {
-        basePosition: new THREE.Vector3(0, 0.05, 2.8),
-        spacing: 0.6,
-        rowSpacing: 0.42,
-        tilesPerRow: 6,
-        direction: new THREE.Vector3(1, 0, 0), // X축 방향
-        rowDirection: new THREE.Vector3(0, 0, 1), // Z축 방향
-      },
-    };
+    // 이 플레이어의 패들
+    this.handTiles = []; // 손패
+    this.discardTiles = []; // 버린패
+
+    // 위치 및 회전 설정
+    this.position = position;
+    this.rotation = rotation; // 라디안 (패 방향)
+
+    // 배치 설정
+    this.handSpacing = 0.58;
+    this.discardSpacing = 0.6;
+    this.discardRowSpacing = 0.42;
+    this.tilesPerRow = 6;
+
+    // 상태
+    this.selectedTile = null;
+    this.isReady = false;
+
+    console.log(
+      `플레이어 ${playerIndex} 생성: 회전 ${(
+        (rotation * 180) /
+        Math.PI
+      ).toFixed(0)}도`
+    );
   }
 
-  // 플레이어별 회전된 설정 생성
-  getRotatedConfig(playerIndex) {
-    const rotationAngle = (playerIndex * Math.PI) / 2; // 0°, 90°, 180°, 270°
+  // === 손패 배치 (위치 회전 + 패 회전) ===
+  arrangeHand() {
+    if (this.handTiles.length === 0) return;
 
-    // 손패 설정 회전
-    const handPos = this.template.hand.basePosition.clone();
-    handPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
+    console.log(
+      `플레이어 ${this.playerIndex} 손패 배치: ${this.handTiles.length}장`
+    );
 
-    const handDir = this.template.hand.direction.clone();
-    handDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
+    this.handTiles.forEach((tile, index) => {
+      // 1. 로컬 위치 계산 (중앙 정렬)
+      const offsetX =
+        (index - (this.handTiles.length - 1) / 2) * this.handSpacing;
+      const localPosition = new THREE.Vector3(offsetX, 0, 0);
 
-    // 버린패 설정 회전
-    const discardPos = this.template.discard.basePosition.clone();
-    discardPos.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
+      // 2. 위치 회전 적용
+      localPosition.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation);
 
-    const discardDir = this.template.discard.direction.clone();
-    discardDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
+      // 3. 최종 위치 = 플레이어 위치 + 회전된 로컬 위치
+      const finalPosition = this.position.clone().add(localPosition);
 
-    const discardRowDir = this.template.discard.rowDirection.clone();
-    discardRowDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationAngle);
-
-    return {
-      playerIndex,
-      rotationAngle: rotationAngle,
-      rotationDegrees: playerIndex * 90,
-      hand: {
-        basePosition: handPos,
-        spacing: this.template.hand.spacing,
-        direction: handDir,
-      },
-      discard: {
-        basePosition: discardPos,
-        spacing: this.template.discard.spacing,
-        rowSpacing: this.template.discard.rowSpacing,
-        tilesPerRow: this.template.discard.tilesPerRow,
-        direction: discardDir,
-        rowDirection: discardRowDir,
-      },
-    };
-  }
-
-  // === 손패 배치 (템플릿 기반) ===
-  arrangePlayerHand(playerIndex, tiles) {
-    if (!tiles || tiles.length === 0) return;
-
-    const config = this.getRotatedConfig(playerIndex);
-    const isHuman = playerIndex === 0;
-
-    if (this.debugMode) {
-      console.log(
-        `플레이어 ${playerIndex} 손패 배치 (${config.rotationDegrees}도 회전)`
-      );
-    }
-
-    tiles.forEach((tile, index) => {
-      // 템플릿 기반 위치 계산
-      const offset = (index - (tiles.length - 1) / 2) * config.hand.spacing;
-      const offsetVector = config.hand.direction.clone().multiplyScalar(offset);
-      const finalPosition = config.hand.basePosition.clone().add(offsetVector);
-
-      // 타일 배치
+      // 4. 타일 배치
       tile.setPosition(finalPosition.x, finalPosition.y, finalPosition.z);
 
-      // 패는 회전시키지 않음 - 모든 패가 같은 방향(앞면이 위)을 바라봄
-      if (tile.mesh) {
-        tile.mesh.rotation.x = 0;
-        tile.mesh.rotation.y = 0; // 회전 없음
-        tile.mesh.rotation.z = 0;
-      }
+      // 5. 패는 모든 플레이어가 동일한 방향 (회전 없음)
+      tile.setRotation(0, 0, 0);
 
-      tile.setRevealed(isHuman);
-      tile.owner = `player${playerIndex}`;
+      // 6. 공개/비공개 설정
+      tile.setRevealed(this.isHuman); // 인간만 앞면
+      tile.owner = `player${this.playerIndex}`;
 
+      // 7. 선택 가능 설정 (인간만)
       if (tile.mesh && tile.mesh.userData) {
-        tile.mesh.userData.selectable = isHuman;
+        tile.mesh.userData.selectable = this.isHuman;
       }
     });
 
-    if (this.debugMode) {
-      console.log(`✅ 플레이어 ${playerIndex} 손패 배치 완료`);
-    }
+    console.log(`✅ 플레이어 ${this.playerIndex} 손패 배치 완료`);
   }
 
-  // === 버린패 배치 (템플릿 기반) ===
-  arrangeDiscardedTiles(playerIndex, tiles) {
-    if (!tiles || tiles.length === 0) return;
+  // === 버린패 배치 ===
+  arrangeDiscards() {
+    if (this.discardTiles.length === 0) return;
 
-    const config = this.getRotatedConfig(playerIndex);
+    console.log(
+      `플레이어 ${this.playerIndex} 버린패 배치: ${this.discardTiles.length}장`
+    );
 
-    if (this.debugMode) {
-      console.log(
-        `플레이어 ${playerIndex} 버린패 배치 (${config.rotationDegrees}도 회전)`
-      );
-    }
+    // 버린패 기준 위치 (플레이어 위치에서 중앙 방향으로)
+    const discardOffset = new THREE.Vector3(0, -0.3, -2.2); // 중앙 방향으로
+    discardOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation);
+    const discardBasePosition = this.position.clone().add(discardOffset);
 
-    tiles.forEach((tile, index) => {
-      const row = Math.floor(index / config.discard.tilesPerRow);
-      const col = index % config.discard.tilesPerRow;
+    this.discardTiles.forEach((tile, index) => {
+      const row = Math.floor(index / this.tilesPerRow);
+      const col = index % this.tilesPerRow;
 
-      // 템플릿 기반 그리드 계산
+      // 1. 그리드 위치 계산 (회전 전)
       const colOffset =
-        (col - (config.discard.tilesPerRow - 1) / 2) * config.discard.spacing;
-      const rowOffset = row * config.discard.rowSpacing;
+        (col - (this.tilesPerRow - 1) / 2) * this.discardSpacing;
+      const rowOffset = row * this.discardRowSpacing;
+      const localPosition = new THREE.Vector3(colOffset, 0, rowOffset);
 
-      // 회전된 방향벡터로 최종 위치 계산
-      const colVector = config.discard.direction
-        .clone()
-        .multiplyScalar(colOffset);
-      const rowVector = config.discard.rowDirection
-        .clone()
-        .multiplyScalar(rowOffset);
-      const finalPosition = config.discard.basePosition
-        .clone()
-        .add(colVector)
-        .add(rowVector);
+      // 2. 위치 회전 적용
+      localPosition.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation);
 
-      // 타일 배치
+      // 3. 최종 위치
+      const finalPosition = discardBasePosition.clone().add(localPosition);
+
+      // 4. 버린패는 눕혀서 배치 (앞면이 위로)
       tile.setPosition(finalPosition.x, finalPosition.y, finalPosition.z);
 
-      // 버린패도 회전시키지 않음 - 위치만 회전
-      // 모든 버린패가 동일한 방향으로 눕혀짐
-      tile.setRotation(Math.PI / 2, 0, 0); // X축만 회전 (눕히기)
+      // 5. 버린패는 눕히기만 (Y축 회전 없음)
+      tile.setRotation(Math.PI / 2, 0, 0);
 
-      tile.setRevealed(true);
+      // 6. 버린패 설정
+      tile.setRevealed(true); // 버린패는 항상 공개
       tile.setDiscarded(true);
-      tile.owner = `discard${playerIndex}`;
+      tile.owner = `discard${this.playerIndex}`;
+
+      // 7. 선택 불가
+      if (tile.mesh && tile.mesh.userData) {
+        tile.mesh.userData.selectable = false;
+      }
     });
 
-    if (this.debugMode) {
-      console.log(`✅ 플레이어 ${playerIndex} 버린패 배치 완료`);
+    console.log(`✅ 플레이어 ${this.playerIndex} 버린패 배치 완료`);
+  }
+
+  // === 패 추가 ===
+  addTile(tile) {
+    tile.owner = `player${this.playerIndex}`;
+    tile.setRevealed(this.isHuman);
+    this.handTiles.push(tile);
+    this.sortHand();
+  }
+
+  // === 패 제거 ===
+  removeTile(tile) {
+    const index = this.handTiles.indexOf(tile);
+    if (index !== -1) {
+      this.handTiles.splice(index, 1);
+      return tile;
+    }
+    return null;
+  }
+
+  // === 패 버리기 ===
+  discardTile(tile) {
+    const removedTile = this.removeTile(tile);
+    if (!removedTile) {
+      console.error(
+        `플레이어 ${this.playerIndex}: 손패에 없는 타일`,
+        tile?.toString()
+      );
+      return false;
+    }
+
+    // 버린패에 추가
+    removedTile.owner = `discard${this.playerIndex}`;
+    this.discardTiles.push(removedTile);
+
+    // 재배치
+    this.arrangeHand();
+    this.arrangeDiscards();
+
+    // 선택 해제
+    if (this.selectedTile === tile) {
+      this.selectedTile = null;
+    }
+
+    console.log(`플레이어 ${this.playerIndex} 패 버리기: ${tile.toString()}`);
+    return true;
+  }
+
+  // === 패 선택 (인간만) ===
+  selectTile(tile) {
+    if (!this.isHuman) return false;
+    if (!this.handTiles.includes(tile)) return false;
+
+    // 이전 선택 해제
+    if (this.selectedTile) {
+      this.selectedTile.deselect();
+    }
+
+    // 새 선택
+    this.selectedTile = tile;
+    tile.select();
+
+    console.log(`플레이어 ${this.playerIndex} 패 선택: ${tile.toString()}`);
+    return true;
+  }
+
+  // === 선택 해제 ===
+  deselectTile() {
+    if (this.selectedTile) {
+      this.selectedTile.deselect();
+      this.selectedTile = null;
     }
   }
 
-  // === 기본 메서드들 ===
-  addTileToPlayerHand(playerIndex, tile, handTiles) {
-    if (!handTiles.includes(tile)) {
-      handTiles.push(tile);
-    }
-    this.arrangePlayerHand(playerIndex, handTiles);
+  // === 손패 정렬 ===
+  sortHand() {
+    this.handTiles.sort((a, b) => a.compare(b));
   }
 
-  addTileToDiscardPile(playerIndex, tile, discardTiles) {
-    if (!discardTiles.includes(tile)) {
-      discardTiles.push(tile);
-    }
-    this.arrangeDiscardedTiles(playerIndex, discardTiles);
+  // === 랜덤 패 선택 (AI용) ===
+  getRandomTile() {
+    if (this.handTiles.length === 0) return null;
+    const randomIndex = Math.floor(Math.random() * this.handTiles.length);
+    return this.handTiles[randomIndex];
   }
 
-  removeTileFromHand(tile, handTiles) {
-    const index = handTiles.indexOf(tile);
-    return index !== -1 ? handTiles.splice(index, 1)[0] : null;
-  }
-
-  validateTilePositions(playerIndex, tiles, type = "hand") {
+  // === 상태 정보 ===
+  getState() {
     return {
-      playerIndex,
-      type,
-      totalTiles: tiles.length,
-      issues: [],
-      positions: tiles.map((tile, index) => ({
-        index,
-        tile: tile.toString(),
-        position: tile.mesh
-          ? {
-              x: tile.mesh.position.x,
-              y: tile.mesh.position.y,
-              z: tile.mesh.position.z,
-            }
-          : { x: 0, y: 0, z: 0 },
-        rotationDegrees: tile.mesh
-          ? ((tile.mesh.rotation.y * 180) / Math.PI).toFixed(0)
-          : "0",
-      })),
+      playerIndex: this.playerIndex,
+      isHuman: this.isHuman,
+      handCount: this.handTiles.length,
+      discardCount: this.discardTiles.length,
+      selectedTile: this.selectedTile?.toString() || null,
+      position: this.position.toArray(),
+      rotationDegrees: (this.rotation * 180) / Math.PI,
+      isReady: this.isReady,
     };
   }
 
-  testAllLayouts() {
-    console.log("=== 템플릿 기반 레이아웃 테스트 ===");
-    console.log("기준 템플릿:");
-    console.log(
-      `  손패: (${this.template.hand.basePosition.x}, ${this.template.hand.basePosition.z})`
-    );
-    console.log(
-      `  버린패: (${this.template.discard.basePosition.x}, ${this.template.discard.basePosition.z})`
-    );
-    console.log("");
+  // === 손패 정보 (인간만 공개) ===
+  getHandInfo() {
+    return {
+      tiles: this.isHuman ? this.handTiles.map((t) => t.toString()) : [],
+      count: this.handTiles.length,
+      selectedTile: this.selectedTile?.toString() || null,
+    };
+  }
 
-    for (let i = 0; i < 4; i++) {
-      const config = this.getRotatedConfig(i);
-      console.log(`플레이어 ${i} (${config.rotationDegrees}도 회전):`);
+  // === 패 방향 테스트 ===
+  testTilePositions() {
+    console.log(`=== 플레이어 ${this.playerIndex} 패 위치 테스트 ===`);
+    console.log(
+      `플레이어 위치: (${this.position.x.toFixed(2)}, ${this.position.z.toFixed(
+        2
+      )})`
+    );
+    console.log(
+      `플레이어 회전: ${((this.rotation * 180) / Math.PI).toFixed(0)}도`
+    );
+
+    if (this.handTiles.length > 0) {
+      const firstTile = this.handTiles[0];
+      if (firstTile.mesh) {
+        const pos = firstTile.mesh.position;
+        const rot = firstTile.mesh.rotation;
+        console.log(
+          `첫 번째 패 위치: (${pos.x.toFixed(2)}, ${pos.z.toFixed(2)})`
+        );
+        console.log(
+          `첫 번째 패 회전: (${((rot.x * 180) / Math.PI).toFixed(0)}°, ${(
+            (rot.y * 180) /
+            Math.PI
+          ).toFixed(0)}°, ${((rot.z * 180) / Math.PI).toFixed(0)}°)`
+        );
+        console.log(`모든 패가 같은 방향을 향함 (회전 없음)`);
+      }
+    }
+  }
+
+  // === 디버그 ===
+  debugInfo() {
+    console.log(
+      `=== 플레이어 ${this.playerIndex} (${this.isHuman ? "인간" : "AI"}) ===`
+    );
+    console.log(
+      `위치: (${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)})`
+    );
+    console.log(`회전: ${((this.rotation * 180) / Math.PI).toFixed(0)}도`);
+    console.log(`손패: ${this.handTiles.length}장`);
+    if (this.isHuman) {
       console.log(
-        `  손패: (${config.hand.basePosition.x.toFixed(
-          2
-        )}, ${config.hand.basePosition.z.toFixed(2)})`
-      );
-      console.log(
-        `  버린패: (${config.discard.basePosition.x.toFixed(
-          2
-        )}, ${config.discard.basePosition.z.toFixed(2)})`
-      );
-      console.log(
-        `  타일 회전: ${((config.rotationAngle * 180) / Math.PI).toFixed(0)}도`
+        `  내용: ${this.handTiles.map((t) => t.toString()).join(" ")}`
       );
     }
+    console.log(`버린패: ${this.discardTiles.length}장`);
+    console.log(`선택된 패: ${this.selectedTile?.toString() || "없음"}`);
 
-    console.log("\n✅ 템플릿 기반 테스트 완료");
+    // 패 위치 확인
+    this.testTilePositions();
   }
 
-  fixOverlappingTiles() {
-    // 기준 템플릿만 수정하면 모든 플레이어에 적용
-    this.template.hand.basePosition.z = 5.0;
-    this.template.discard.basePosition.z = 2.8;
-    console.log("✅ 템플릿 기준 거리 조정 완료 (모든 플레이어 자동 적용)");
+  // === 즉시 재배치 ===
+  rearrange() {
+    this.arrangeHand();
+    this.arrangeDiscards();
   }
 
-  setDebugMode(enabled) {
-    this.debugMode = enabled;
-    console.log(
-      `템플릿 기반 PlayerManager 디버그 모드: ${
-        enabled ? "활성화" : "비활성화"
-      }`
-    );
-  }
-
+  // === 정리 ===
   dispose() {
-    console.log("템플릿 기반 UnifiedPlayerManager 정리 완료");
+    console.log(`플레이어 ${this.playerIndex} 정리 중...`);
+
+    // 모든 타일 정리
+    [...this.handTiles, ...this.discardTiles].forEach((tile) => {
+      if (tile.dispose) tile.dispose();
+    });
+
+    this.handTiles = [];
+    this.discardTiles = [];
+    this.selectedTile = null;
+    this.isReady = false;
+
+    console.log(`✅ 플레이어 ${this.playerIndex} 정리 완료`);
   }
 }
+
+export default PlayerTemplate;

@@ -1,47 +1,21 @@
-// src/game/MahjongGame.js (완전한 버전 - UnifiedPlayerManager 사용)
-import { MahjongTile } from "./MahjongTile.js";
-import { MahjongPlayer } from "./MahjongPlayer.js";
-import { HandEvaluator } from "./HandEvaluator.js";
-import { YakuChecker } from "./YakuChecker.js";
-import * as THREE from "three";
+// src/game/MahjongGame.js - 완전한 버전 (단순한 연결만)
+import { PlayerManager } from "./PlayerManager.js";
 
 export class MahjongGame {
   constructor(sceneManager) {
     this.sceneManager = sceneManager;
 
+    // PlayerManager가 모든 걸 담당
+    this.playerManager = null;
+
     // 게임 상태
     this.gameState = "waiting";
-    this.roundState = "ready";
+    this.isInitialized = false;
 
-    // 게임 설정
-    this.settings = {
-      playerCount: 4,
-      targetScore: 25000,
-      startingScore: 25000,
-    };
-
-    // 플레이어들
-    this.players = [];
-    this.humanPlayer = null;
-    this.currentPlayerIndex = 0;
-    this.dealerIndex = 0;
-
-    // 패 관리 (UnifiedPlayerManager는 init에서 생성)
-    this.tileManager = null;
-    this.wallTiles = [];
-    this.discardPiles = [[], [], [], []]; // 각 플레이어별 버린패
-
-    // 시스템들
-    this.handEvaluator = new HandEvaluator();
-    this.yakuChecker = new YakuChecker();
-
-    // 콜백들
+    // 콜백들 (UI 연결용)
     this._onGameStateChanged = null;
     this._onPlayerTurn = null;
     this._onRoundEnd = null;
-
-    // 디버그 모드 (기본값 false)
-    this.debugMode = false;
   }
 
   // 콜백 setter/getter
@@ -64,661 +38,273 @@ export class MahjongGame {
     return this._onRoundEnd;
   }
 
+  // === 초기화 ===
   async init() {
-    console.log("🀄 마작 게임 초기화 중...");
+    console.log("🀄 MahjongGame 초기화 시작...");
 
     try {
-      // UnifiedPlayerManager 동적 생성
-      const { UnifiedPlayerManager } = await import("./PlayerTemplate.js");
-      this.tileManager = new UnifiedPlayerManager(this.sceneManager);
+      // PlayerManager 생성 및 초기화
+      this.playerManager = new PlayerManager(this.sceneManager);
+      await this.playerManager.init();
 
-      // 디버그 모드 설정 (기본적으로 비활성화)
-      this.tileManager.setDebugMode(this.debugMode);
-
-      // 겹침 문제 사전 해결
-      this.tileManager.fixOverlappingTiles();
-
-      console.log("✅ UnifiedPlayerManager 생성 완료");
+      this.isInitialized = true;
+      console.log("✅ MahjongGame 초기화 완료");
     } catch (error) {
-      console.error("❌ UnifiedPlayerManager 생성 실패:", error);
-      this.tileManager = this.createFallbackTileManager();
-    }
-
-    this.createPlayers();
-    this.createInitialWall();
-
-    // 테스트 모드는 디버그 모드일 때만 실행
-    if (this.debugMode && this.tileManager.testAllLayouts) {
-      console.log("=== 패 배치 테스트 모드 ===");
-      this.tileManager.testAllLayouts();
-    }
-
-    console.log("✅ 마작 게임 초기화 완료");
-  }
-
-  createFallbackTileManager() {
-    console.log("⚠️ Fallback UnifiedPlayerManager 사용");
-    return {
-      arrangePlayerHand: (playerIndex, handTiles) => {
-        console.log(
-          `Fallback: 플레이어 ${playerIndex} 손패 ${handTiles.length}장 배치`
-        );
-        const baseX = playerIndex * 3;
-        handTiles.forEach((tile, index) => {
-          tile.setPosition(baseX + index * 0.6, 0.35, 0);
-        });
-      },
-      arrangeDiscardedTiles: (playerIndex, discardTiles) => {
-        console.log(
-          `Fallback: 플레이어 ${playerIndex} 버린패 ${discardTiles.length}장 배치`
-        );
-      },
-      setDebugMode: (enabled) => {
-        console.log(`Fallback PlayerManager 디버그 모드: ${enabled}`);
-      },
-      validateTilePositions: () => ({ issues: [] }),
-      addTileToPlayerHand: (playerIndex, tile, handTiles) => {
-        handTiles.push(tile);
-        this.arrangePlayerHand(playerIndex, handTiles);
-      },
-      addTileToDiscardPile: (playerIndex, tile, discardTiles) => {
-        discardTiles.push(tile);
-        this.arrangeDiscardedTiles(playerIndex, discardTiles);
-      },
-      removeTileFromHand: (tile, handTiles) => {
-        const index = handTiles.indexOf(tile);
-        return index !== -1 ? handTiles.splice(index, 1)[0] : null;
-      },
-      testAllLayouts: () => console.log("Fallback: 레이아웃 테스트 스킵"),
-      fixOverlappingTiles: () => console.log("Fallback: 겹침 해결 스킵"),
-    };
-  }
-
-  createPlayers() {
-    const winds = ["east", "south", "west", "north"];
-    const names = ["플레이어", "AI 남", "AI 서", "AI 북"];
-
-    for (let i = 0; i < this.settings.playerCount; i++) {
-      const isHuman = i === 0;
-      const player = new MahjongPlayer(i, isHuman, names[i], winds[i]);
-      player.score = this.settings.startingScore;
-
-      this.players.push(player);
-
-      if (isHuman) {
-        this.humanPlayer = player;
-      }
-    }
-
-    console.log(
-      "✅ 플레이어 생성 완료:",
-      this.players.map((p) => p.name)
-    );
-  }
-
-  createInitialWall() {
-    this.wallTiles = [];
-
-    // 136장의 패 생성
-    const tileTypes = [
-      // 만수패 (1-9, 각 4장)
-      ...Array(4)
-        .fill()
-        .flatMap(() =>
-          Array.from({ length: 9 }, (_, i) => ({ type: "man", number: i + 1 }))
-        ),
-      // 통수패 (1-9, 각 4장)
-      ...Array(4)
-        .fill()
-        .flatMap(() =>
-          Array.from({ length: 9 }, (_, i) => ({ type: "pin", number: i + 1 }))
-        ),
-      // 삭수패 (1-9, 각 4장)
-      ...Array(4)
-        .fill()
-        .flatMap(() =>
-          Array.from({ length: 9 }, (_, i) => ({ type: "sou", number: i + 1 }))
-        ),
-      // 자패 (동남서북백발중, 각 4장)
-      ...Array(4)
-        .fill()
-        .flatMap(() => [
-          { type: "honor", number: "east" },
-          { type: "honor", number: "south" },
-          { type: "honor", number: "west" },
-          { type: "honor", number: "north" },
-          { type: "honor", number: "white" },
-          { type: "honor", number: "green" },
-          { type: "honor", number: "red" },
-        ]),
-    ];
-
-    // 화면 밖에 패들을 생성 (나중에 배치)
-    tileTypes.forEach((tileData, index) => {
-      const tile = new MahjongTile(
-        tileData.type,
-        tileData.number,
-        this.sceneManager,
-        new THREE.Vector3(-20 - (index % 10), 0.2, Math.floor(index / 10)) // 임시 위치
-      );
-      tile.owner = "wall";
-      this.wallTiles.push(tile);
-    });
-
-    // 배열 섞기
-    this.shuffleArray(this.wallTiles);
-    console.log(`✅ 패산 생성 완료: ${this.wallTiles.length}장`);
-  }
-
-  shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [array[i], array[j]] = [array[j], array[i]];
+      console.error("❌ MahjongGame 초기화 실패:", error);
+      throw error;
     }
   }
 
+  // === 게임 시작 ===
   async startNewGame() {
-    console.log("🎮 새 게임 시작");
-
-    this.gameState = "playing";
-    this.currentPlayerIndex = this.dealerIndex;
-
-    // 플레이어 초기화
-    this.players.forEach((player) => {
-      player.score = this.settings.startingScore;
-      player.resetForNewGame();
-    });
-
-    await this.startNewRound();
-  }
-
-  async startNewRound() {
-    console.log(`🀄 라운드 시작`);
-
-    this.roundState = "playing";
-    this.players.forEach((player) => player.resetForNewRound());
-
-    // 각 플레이어에게 패 배분
-    await this.distributeInitialHands();
-
-    // 패 배치 (UnifiedPlayerManager 사용)
-    this.arrangeAllPlayerHands();
-
-    this.updateGameState();
-  }
-
-  async distributeInitialHands() {
-    console.log("=== 패 배분 시작 ===");
-
-    // 패산 충분한지 확인
-    const requiredTiles = 4 * 13 + 1; // 각자 13장 + 동가 1장 추가
-    if (this.wallTiles.length < requiredTiles) {
-      console.error(
-        `패산이 부족합니다. 필요: ${requiredTiles}, 현재: ${this.wallTiles.length}`
-      );
+    if (!this.isInitialized || !this.playerManager) {
+      console.error("게임이 초기화되지 않았습니다.");
       return;
     }
 
-    // 각 플레이어에게 13장씩 할당
-    for (let round = 0; round < 13; round++) {
-      for (let playerIndex = 0; playerIndex < 4; playerIndex++) {
-        if (this.wallTiles.length === 0) {
-          console.error("패산이 고갈되었습니다!");
-          return;
-        }
+    console.log("🎮 새 게임 시작");
+    this.gameState = "playing";
 
-        const player = this.players[playerIndex];
-        const tile = this.wallTiles.shift();
-        tile.owner = `player${playerIndex}`;
-        player.addTile(tile);
-      }
+    try {
+      // PlayerManager에게 게임 시작 위임
+      await this.playerManager.startGame();
+
+      // UI 업데이트
+      this.updateGameState();
+
+      console.log("✅ 게임 시작 완료");
+    } catch (error) {
+      console.error("게임 시작 실패:", error);
+      this.gameState = "error";
+    }
+  }
+
+  // === 패 버리기 (PlayerManager에 위임) ===
+  handleTileDiscard(tile) {
+    if (!this.playerManager) {
+      console.error("PlayerManager가 없습니다.");
+      return false;
     }
 
-    // 동가에게 1장 추가 (총 14장)
-    if (this.wallTiles.length > 0) {
-      const dealerTile = this.wallTiles.shift();
-      dealerTile.owner = `player${this.dealerIndex}`;
-      this.players[this.dealerIndex].addTile(dealerTile);
+    console.log("게임: 패 버리기 요청 받음:", tile.toString());
+
+    // 현재 플레이어(0번)의 패 버리기
+    const success = this.playerManager.discardTile(0, tile);
+
+    if (success) {
+      // 새 패 뽑기
+      this.playerManager.drawTile(0);
+
+      // UI 업데이트
+      this.updateGameState();
     }
 
-    // 배분 결과 확인
-    this.players.forEach((player, index) => {
-      console.log(`${player.name}: ${player.hand.length}장 할당`);
-      if (player.hand.length === 0) {
-        console.error(`⚠️ 플레이어 ${index}에게 패가 할당되지 않았습니다!`);
-      }
+    return success;
+  }
+
+  // === 패 선택 (PlayerManager에 위임) ===
+  handleTileSelect(tile) {
+    if (!this.playerManager) {
+      return false;
+    }
+
+    // 플레이어 0의 패 선택
+    return this.playerManager.selectTile(0, tile);
+  }
+
+  // === UI 업데이트 ===
+  updateGameState() {
+    if (this._onGameStateChanged && this.playerManager) {
+      const managerState = this.playerManager.getGameState();
+
+      const gameState = {
+        gameState: this.gameState,
+        currentPlayerIndex: managerState.currentPlayerIndex,
+        remainingTiles: managerState.wallCount,
+        players: managerState.players.map((playerState, index) => ({
+          name: index === 0 ? "플레이어" : `AI ${index}`,
+          score: 25000,
+          handCount: playerState.handCount,
+          discardCount: playerState.discardCount,
+          isCurrentPlayer: managerState.currentPlayerIndex === index,
+        })),
+      };
+
+      this._onGameStateChanged(gameState);
+    }
+  }
+
+  // === 게임 상태 정보 ===
+  getGameState() {
+    if (!this.playerManager) {
+      return {
+        gameState: this.gameState,
+        isReady: false,
+        error: "PlayerManager가 없습니다.",
+      };
+    }
+
+    const managerState = this.playerManager.getGameState();
+
+    return {
+      gameState: this.gameState,
+      currentPlayerIndex: managerState.currentPlayerIndex,
+      remainingTiles: managerState.wallCount,
+      players: managerState.players.map((playerState, index) => ({
+        name: index === 0 ? "플레이어" : `AI ${index}`,
+        score: 25000,
+        handCount: playerState.handCount,
+        discardCount: playerState.discardCount,
+        isCurrentPlayer: managerState.currentPlayerIndex === index,
+      })),
+      isReady: managerState.isReady,
+    };
+  }
+
+  // === 디버그 정보 ===
+  getDebugInfo() {
+    if (!this.playerManager) {
+      return { error: "PlayerManager가 없습니다." };
+    }
+
+    const managerState = this.playerManager.getGameState();
+    const player0Hand = this.playerManager.getPlayerHandInfo(0);
+
+    return {
+      gameState: this.gameState,
+      isInitialized: this.isInitialized,
+      playerManager: "활성",
+      currentPlayerIndex: managerState.currentPlayerIndex,
+      wallCount: managerState.wallCount,
+      player0Hand: player0Hand.tiles,
+      players: managerState.players.map((state, index) => ({
+        playerIndex: index,
+        handCount: state.handCount,
+        discardCount: state.discardCount,
+        position: state.position,
+        rotationDegrees: state.rotationDegrees,
+        isHuman: state.isHuman,
+      })),
+      isReady: managerState.isReady,
+    };
+  }
+
+  // === 테스트/디버그 메서드들 ===
+
+  // PlayerManager 디버그 호출
+  debugPlayerManager() {
+    if (this.playerManager) {
+      this.playerManager.debugInfo();
+    }
+  }
+
+  // 테스트 손패 생성
+  generateTestHand() {
+    if (this.playerManager) {
+      this.playerManager.generateTestHand();
+      this.updateGameState();
+    }
+  }
+
+  // 플레이어 위치 테스트
+  testPlayerPositions() {
+    if (this.playerManager) {
+      this.playerManager.testPlayerPositions();
+    }
+  }
+
+  // 모든 플레이어 재배치
+  rearrangeAll() {
+    if (this.playerManager) {
+      this.playerManager.rearrangeAll();
+    }
+  }
+
+  // === 호환성 메서드들 (기존 코드와의 연결용) ===
+
+  // 기존 이벤트 시스템과 연결
+  get humanPlayer() {
+    if (!this.playerManager) return null;
+
+    const player0 = this.playerManager.getPlayer(0);
+    return {
+      hand: player0.handTiles || [],
+      name: "플레이어",
+      score: 25000,
+      index: 0,
+    };
+  }
+
+  get players() {
+    if (!this.playerManager) return [];
+
+    return [0, 1, 2, 3].map((index) => {
+      const player = this.playerManager.getPlayer(index);
+      return {
+        hand: player.handTiles || [],
+        name: index === 0 ? "플레이어" : `AI ${index}`,
+        score: 25000,
+        index: index,
+        isHuman: index === 0,
+      };
     });
+  }
 
-    console.log(`✅ 손패 배분 완료. 남은 패: ${this.wallTiles.length}장`);
+  get currentPlayerIndex() {
+    return this.playerManager ? this.playerManager.currentPlayerIndex : 0;
+  }
+
+  get wallTiles() {
+    return this.playerManager ? this.playerManager.wallTiles : [];
+  }
+
+  // 구버전 호환용
+  handleDiscard(playerIndex, tile) {
+    if (playerIndex === 0) {
+      return this.handleTileDiscard(tile);
+    } else {
+      console.warn("현재는 플레이어 0만 지원합니다.");
+      return false;
+    }
   }
 
   arrangeAllPlayerHands() {
-    console.log("=== 모든 플레이어 손패 배치 (UnifiedPlayerManager 사용) ===");
-
-    this.players.forEach((player, index) => {
-      if (player.hand.length === 0) {
-        console.warn(`플레이어 ${index}의 손패가 비어있습니다. 건너뜁니다.`);
-        return;
-      }
-
-      // 패 정렬
-      player.sortHand();
-
-      // UnifiedPlayerManager로 배치
-      this.tileManager.arrangePlayerHand(index, player.hand);
-
-      // 검증 (디버그 모드일 때만)
-      if (this.debugMode) {
-        const validation = this.tileManager.validateTilePositions(
-          index,
-          player.hand,
-          "hand"
-        );
-
-        if (validation.issues.length > 0) {
-          console.warn(`플레이어 ${index} 손패 배치 문제:`, validation.issues);
-        } else {
-          console.log(
-            `✅ 플레이어 ${index} (${player.name}) 손패 배치 성공 - ${player.hand.length}장`
-          );
-        }
-
-        // 회전 상태 확인
-        if (player.hand.length > 0) {
-          const firstTile = player.hand[0];
-          if (firstTile.mesh) {
-            const yRotDeg = (
-              (firstTile.mesh.rotation.y * 180) /
-              Math.PI
-            ).toFixed(0);
-            console.log(`  → 플레이어 ${index} 패 회전: ${yRotDeg}도`);
-          }
-        }
-      }
-    });
-
-    console.log("✅ 모든 플레이어 손패 배치 완료");
-  }
-
-  // === 패 버리기 처리 ===
-
-  async handleDiscard(playerIndex, tile) {
-    const player = this.players[playerIndex];
-
-    console.log(`${player.name}이 ${tile.toString()}을(를) 버립니다.`);
-
-    // 손패에서 제거
-    const removedTile = this.tileManager.removeTileFromHand(tile, player.hand);
-    if (!removedTile) {
-      console.error("손패에서 타일을 찾을 수 없습니다:", tile.toString());
-      return;
-    }
-
-    // 버린패 더미에 추가
-    this.tileManager.addTileToDiscardPile(
-      playerIndex,
-      tile,
-      this.discardPiles[playerIndex]
-    );
-
-    // 손패 재배치
-    this.tileManager.arrangePlayerHand(playerIndex, player.hand);
-
-    // 다음 턴
-    this.nextTurn();
-  }
-
-  nextTurn() {
-    // 정순 플레이 (0 → 1 → 2 → 3 → 0...)
-    this.currentPlayerIndex = (this.currentPlayerIndex + 1) % 4;
-
-    if (this.wallTiles.length > 0) {
-      this.startPlayerTurn();
-      this.updateGameState();
-    } else {
-      this.handleGameDraw();
-    }
-  }
-
-  startPlayerTurn() {
-    const currentPlayer = this.players[this.currentPlayerIndex];
-    console.log(`${currentPlayer.name}의 턴`);
-
-    if (this._onPlayerTurn) {
-      this._onPlayerTurn(this.currentPlayerIndex);
-    }
-
-    // 패 뽑기 (13장인 경우)
-    if (currentPlayer.hand.length === 13) {
-      this.drawTileForPlayer(this.currentPlayerIndex);
-    }
-
-    // AI 플레이어 자동 진행
-    if (this.currentPlayerIndex !== 0) {
-      setTimeout(() => this.handleAITurn(), 1000);
-    }
-  }
-
-  drawTileForPlayer(playerIndex) {
-    if (this.wallTiles.length === 0) {
-      this.handleGameDraw();
-      return;
-    }
-
-    const player = this.players[playerIndex];
-    const newTile = this.wallTiles.shift();
-    newTile.owner = `player${playerIndex}`;
-
-    // 손패에 추가하고 재배치
-    this.tileManager.addTileToPlayerHand(playerIndex, newTile, player.hand);
-
-    console.log(
-      `${player.name}이 패를 뽑았습니다. (남은 패: ${this.wallTiles.length}장)`
-    );
-    this.updateGameState();
-  }
-
-  handleAITurn() {
-    const playerIndex = this.currentPlayerIndex;
-    const player = this.players[playerIndex];
-
-    if (player.hand.length > 13) {
-      // 랜덤하게 패 선택해서 버리기
-      const randomIndex = Math.floor(Math.random() * player.hand.length);
-      const tileToDiscard = player.hand[randomIndex];
-      this.handleDiscard(playerIndex, tileToDiscard);
-    }
-  }
-
-  async handleGameDraw() {
-    console.log("🔚 유국 (패산 고갈)");
-    this.gameState = "roundEnd";
-  }
-
-  // === 디버그 및 테스트 메서드들 ===
-
-  setDebugMode(enabled) {
-    this.debugMode = enabled;
-    if (this.tileManager && this.tileManager.setDebugMode) {
-      this.tileManager.setDebugMode(enabled);
-    }
-    console.log(`게임 디버그 모드: ${enabled ? "활성화" : "비활성화"}`);
-  }
-
-  testPlayerTileLayout(playerIndex) {
-    if (!this.debugMode) {
-      console.log("디버그 모드가 아니므로 테스트를 건너뜁니다.");
-      return;
-    }
-
-    console.log(`=== 플레이어 ${playerIndex} 패 배치 테스트 ===`);
-
-    const player = this.players[playerIndex];
-    if (!player) {
-      console.error("플레이어를 찾을 수 없습니다.");
-      return;
-    }
-
-    console.log(
-      `플레이어 정보: ${player.name} (${player.isHuman ? "인간" : "AI"})`
-    );
-    console.log(`손패: ${player.hand.length}장`);
-    console.log(`버린패: ${this.discardPiles[playerIndex].length}장`);
-
-    // 손패가 비어있으면 더미 데이터 생성
-    if (player.hand.length === 0) {
-      console.log("⚠️ 손패가 비어있어서 테스트 데이터를 생성합니다.");
-      this.generateTestHand(playerIndex);
-    }
-
-    // 손패 재배치
-    this.tileManager.arrangePlayerHand(playerIndex, player.hand);
-
-    // 버린패 재배치
-    if (this.discardPiles[playerIndex].length > 0) {
-      this.tileManager.arrangeDiscardedTiles(
-        playerIndex,
-        this.discardPiles[playerIndex]
-      );
-    }
-
-    // 검증
-    const handValidation = this.tileManager.validateTilePositions(
-      playerIndex,
-      player.hand,
-      "hand"
-    );
-    const discardValidation = this.tileManager.validateTilePositions(
-      playerIndex,
-      this.discardPiles[playerIndex],
-      "discard"
-    );
-
-    console.log(
-      "손패 검증:",
-      handValidation.issues.length === 0 ? "✅ 통과" : "❌ 실패",
-      handValidation.issues
-    );
-    console.log(
-      "버린패 검증:",
-      discardValidation.issues.length === 0 ? "✅ 통과" : "❌ 실패",
-      discardValidation.issues
-    );
-
-    // 위치 정보 출력
-    if (handValidation.positions.length > 0) {
-      console.log("손패 위치 정보:");
-      handValidation.positions.slice(0, 5).forEach((pos) => {
-        console.log(
-          `  ${pos.tile}: (${pos.position.x.toFixed(
-            2
-          )}, ${pos.position.z.toFixed(2)}) ${pos.rotationDegrees}도`
-        );
-      });
-    }
-  }
-
-  generateTestHand(playerIndex) {
-    const player = this.players[playerIndex];
-    const testTiles = [];
-
-    // 간단한 테스트 패 생성
-    const testData = [
-      { type: "man", number: 1 },
-      { type: "man", number: 2 },
-      { type: "man", number: 3 },
-      { type: "pin", number: 4 },
-      { type: "pin", number: 5 },
-      { type: "pin", number: 6 },
-      { type: "sou", number: 7 },
-      { type: "sou", number: 8 },
-      { type: "sou", number: 9 },
-      { type: "honor", number: "east" },
-      { type: "honor", number: "south" },
-      { type: "honor", number: "white" },
-      { type: "honor", number: "red" },
-    ];
-
-    testData.forEach((data, index) => {
-      const tile = new MahjongTile(
-        data.type,
-        data.number,
-        this.sceneManager,
-        new THREE.Vector3(-30 - index, 0.2, -10) // 임시 위치
-      );
-      tile.owner = `player${playerIndex}`;
-      testTiles.push(tile);
-    });
-
-    player.hand = testTiles;
-    console.log(
-      `✅ 플레이어 ${playerIndex}에게 테스트 손패 ${testTiles.length}장 생성`
-    );
-  }
-
-  testAllTileLayouts() {
-    console.log("=== 전체 플레이어 패 배치 테스트 ===");
-
-    if (!this.debugMode) {
-      console.log("디버그 모드가 아니므로 간단한 정보만 표시합니다.");
-      this.players.forEach((player, index) => {
-        console.log(
-          `플레이어 ${index} (${player.name}): 손패 ${player.hand.length}장`
-        );
-      });
-      return;
-    }
-
-    for (let i = 0; i < 4; i++) {
-      this.testPlayerTileLayout(i);
-      console.log("");
-    }
-  }
-
-  simulateDiscards(count = 6) {
-    console.log(`=== 버린패 시뮬레이션 (${count}장) ===`);
-
-    for (let playerIndex = 0; playerIndex < 4; playerIndex++) {
-      const player = this.players[playerIndex];
-
-      // 손패가 없으면 테스트 패 생성
-      if (player.hand.length === 0) {
-        this.generateTestHand(playerIndex);
-      }
-
-      for (let i = 0; i < Math.min(count, player.hand.length); i++) {
-        if (player.hand.length === 0) break;
-
-        // 첫 번째 패를 버리기
-        const tileToDiscard = player.hand[0];
-        this.tileManager.removeTileFromHand(tileToDiscard, player.hand);
-        this.tileManager.addTileToDiscardPile(
-          playerIndex,
-          tileToDiscard,
-          this.discardPiles[playerIndex]
-        );
-      }
-
-      // 손패 재배치
-      this.tileManager.arrangePlayerHand(playerIndex, player.hand);
-
-      console.log(
-        `${player.name}: 손패 ${player.hand.length}장, 버린패 ${this.discardPiles[playerIndex].length}장`
-      );
-    }
-
-    console.log("✅ 버린패 시뮬레이션 완료");
+    this.rearrangeAll();
   }
 
   instantArrangeAll() {
-    console.log("=== 즉시 패 배치 ===");
-
-    // 모든 플레이어가 패를 가지고 있는지 확인
-    let emptyPlayers = 0;
-    this.players.forEach((player, index) => {
-      if (player.hand.length === 0) {
-        console.log(`플레이어 ${index} 손패가 비어있어서 테스트 데이터 생성`);
-        this.generateTestHand(index);
-        emptyPlayers++;
-      }
-    });
-
-    if (emptyPlayers > 0) {
-      console.log(`${emptyPlayers}명의 플레이어에게 테스트 패 생성함`);
-    }
-
-    this.arrangeAllPlayerHands();
-
-    // 버린패도 배치
-    for (let i = 0; i < 4; i++) {
-      if (this.discardPiles[i].length > 0) {
-        this.tileManager.arrangeDiscardedTiles(i, this.discardPiles[i]);
-      }
-    }
-
-    console.log("✅ 즉시 패 배치 완료");
+    this.rearrangeAll();
   }
 
-  fixTileOverlapping() {
-    console.log("=== 패 겹침 문제 해결 ===");
-
-    if (this.tileManager.fixOverlappingTiles) {
-      this.tileManager.fixOverlappingTiles();
-    }
-
-    // 모든 패 재배치
-    this.instantArrangeAll();
-
-    console.log("✅ 겹침 문제 해결 완료");
+  // === 디버그 모드 (호환성) ===
+  setDebugMode(enabled) {
+    console.log(`게임 디버그 모드: ${enabled ? "활성화" : "비활성화"}`);
+    // PlayerManager에 전달할 수 있음 (필요시)
   }
 
-  // === 유틸리티 ===
-
-  updateGameState() {
-    if (this._onGameStateChanged) {
-      this._onGameStateChanged(this.getGameState());
-    }
-  }
-
-  getGameState() {
-    return {
-      gameState: this.gameState,
-      currentPlayerIndex: this.currentPlayerIndex,
-      remainingTiles: this.wallTiles.length,
-      players: this.players.map((player, index) => ({
-        name: player.name,
-        score: player.score,
-        handCount: player.hand.length,
-        discardCount: this.discardPiles[index].length,
-      })),
-    };
-  }
-
-  getDebugInfo() {
-    return {
-      gameState: this.getGameState(),
-      humanPlayerHand: this.humanPlayer
-        ? this.humanPlayer.hand.map((tile) => tile.toString())
-        : [],
-      wallTilesCount: this.wallTiles.length,
-      currentPlayer: this.players[this.currentPlayerIndex].name,
-      discardCounts: this.discardPiles.map((pile) => pile.length),
-      playerHandCounts: this.players.map((player) => player.hand.length),
-      tileManagerStatus: this.tileManager ? "활성" : "비활성",
-      debugMode: this.debugMode,
-    };
-  }
-
-  handleTileDiscard(tile) {
-    console.log("게임: 타일 버리기 요청 받음:", tile.toString());
-    return this.handleDiscard(0, tile);
-  }
-
-  get onTileDiscarded() {
-    return this.handleTileDiscard.bind(this);
-  }
-
+  // === 매 프레임 업데이트 ===
   update() {
-    // 매 프레임 업데이트 (필요시 확장)
+    // 현재는 특별한 업데이트 로직 없음
+    // 필요시 PlayerManager의 애니메이션 등을 여기서 호출
   }
 
+  // === 정리 ===
   dispose() {
-    console.log("게임 정리 중...");
+    console.log("MahjongGame 정리 중...");
 
-    // 모든 타일 정리
-    [
-      ...this.wallTiles,
-      ...this.players.flatMap((p) => p.hand),
-      ...this.discardPiles.flat(),
-    ].forEach((tile) => {
-      if (tile.dispose) tile.dispose();
-    });
-
-    // UnifiedPlayerManager 정리
-    if (this.tileManager) {
-      this.tileManager.dispose();
+    if (this.playerManager) {
+      this.playerManager.dispose();
+      this.playerManager = null;
     }
 
-    console.log("✅ 게임 정리 완료");
+    this.gameState = "disposed";
+    this.isInitialized = false;
+
+    // 콜백 제거
+    this._onGameStateChanged = null;
+    this._onPlayerTurn = null;
+    this._onRoundEnd = null;
+
+    console.log("✅ MahjongGame 정리 완료");
   }
 }
